@@ -169,7 +169,7 @@ set_false_path -to [get_cells -hierarchical -filter {NAME =~ *rst_sync0_sample*}
 
 set_clock_groups -asynchronous \
     -group [get_clocks rx_clk] \
-    -group [get_clocks clk_fpga_0]
+    -group [get_clocks FCLK_CLK0]
 
 # sync_locked / pll_locked CDC synchronisers (2-FF; may not exist in all builds)
 set_false_path -quiet -to [get_cells -hierarchical -filter {NAME =~ *sync_locked_r0*}]
@@ -248,15 +248,11 @@ set_multicycle_path 3 -hold \
     -from [get_cells -hierarchical -filter {NAME =~ *u_ul_sch_hu/vit_soft1_sys_reg*}] \
     -to   [get_cells -hierarchical -filter {NAME =~ *u_ul_sch_hu/u_viterbi/surv_s*_reg*}]
 
-# --- 3. MLE-FSM Accept-Builder PDU-Build (3 Verletzungen) --------------------
-# llc_cov_len_reg → complete_pdu_bits_reg ist der 268-bit-MAC-RESOURCE-Build.
-# Feuert 1× pro Attach-Reply (= alle paar Sekunden).  Multicycle 4 sicher.
-set_multicycle_path 4 -setup \
-    -from [get_cells -hierarchical -filter {NAME =~ *u_accept_builder/llc_cov_len_reg*}] \
-    -to   [get_cells -hierarchical -filter {NAME =~ *u_accept_builder/complete_pdu_bits_reg*}]
-set_multicycle_path 3 -hold \
-    -from [get_cells -hierarchical -filter {NAME =~ *u_accept_builder/llc_cov_len_reg*}] \
-    -to   [get_cells -hierarchical -filter {NAME =~ *u_accept_builder/complete_pdu_bits_reg*}]
+# --- 3. MLE-FSM Accept-Builder PDU-Build — RETIRED (moved to sw/mm/) -------
+# Per docs/MIGRATION_PLAN.md "FPGA modules to delete from carry-over": the
+# Accept-Builder lives in sw/mm/mm_accept_builder.c now (Agent S3). The old
+# u_accept_builder cell does not exist in the new RTL hierarchy; constraints
+# removed to silence Vivado "No valid object(s) found" CRITICAL_WARNINGs.
 
 # --- 4. RX Frontend CIC-Integrator (2 Verletzungen) --------------------------
 # q_comb4_z1_sys_reg → q_cic_out_sys_reg ist der CIC-Output-Stage.  Update-
