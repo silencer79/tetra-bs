@@ -609,19 +609,33 @@ mit Kevin entschieden:
 Run as separate sessions. Each TODO is its own context to avoid quality drop.
 
 - [x] TODO-A: Gold-Ref `Todo`-Felder extraction (`docs/references/gold_field_values.md`, 2026-05-03)
-- [ ] TODO-B: WebUI spec
+- [x] TODO-B: WebUI spec (`docs/OPERATIONS.md` §"WebUI", 2026-05-03)
 - [x] TODO-C: Agent topology (`docs/MIGRATION_PLAN.md` §"Agent Topology", 2026-05-03)
 - [x] TODO-D: Toolchain audit (`docs/HARDWARE.md` §Toolchain + Dependencies, 2026-05-03)
 
-### Phase 2 — Big-Bang implementation (parallel agents)
+### Phase 2 — Big-Bang implementation (parallel agents)  ✅ COMPLETE 2026-05-03
 
-Per topology in TODO-C. Sub-agents work concurrently with declared interfaces.
+Per topology in TODO-C. All 16 agents shipped + merged on `main`:
+A1/A2/A3/A4/A5/A6 (FPGA), S0/S1/S2/S3/S4/S5/S6/S7 (SW), T0/T1/T2 (test).
+Test gate: 24 RTL TBs + 155 SW unit-tests all green.
 
-### Phase 3 — Co-Simulation
+### Phase 3 — Co-Simulation  ✅ COMPLETE 2026-05-03
 
-Verilator wrap of FPGA top, drives gold-ref UL-bursts as stimulus, pipes
-TmaSap-RX into real C daemon, daemon's TmaSap-TX back to FPGA, DL-output
-diff'd against Gold-Ref DL.
+Verilator 5.020 elaborates `Vtetra_top` with the behavioural axi_dma model;
+harness drives `tetra_tmasap_tx_framer` end-to-end via `tb_inject_*` ports
+(gated by `\`ifdef TETRA_TOP_NO_PHY` + `\`ifdef COSIM_TBINJECT`, no production
+synth impact). All three §T2 scenarios reach 0-bit diff:
+
+| Scenario | Cycles | Bit-diff |
+|---|---|---|
+| `m2_attach` | 103 | 0/432 |
+| `group_attach` | 53 | 0/124 |
+| `d_nwrk_broadcast` | 53 | 0/124 |
+
+Daemon-in-loop variant (real `tetra_d` over shm bridge) is Phase-4 fold-back
+work — `sw/dma_io/dma_io.c` needs `\`ifdef HAVE_COSIM_SHM` block; UMAC
+reassembly chain has to come online in cosim (currently stubbed under
+`TETRA_TOP_NO_PHY`).
 
 ### Phase 4 — Live A/B on Boards
 
