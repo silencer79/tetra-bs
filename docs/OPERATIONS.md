@@ -202,9 +202,11 @@ Writes here mutate live FPGA AXI registers via the daemon **and** persist to
 the on-disk config (`/var/lib/tetra/config.json`). Every write returns the
 old + new value so the WebUI can show a confirm-diff.
 
-**Field → register map.** Where the legacy register name is known from
-`docs/ARCHITECTURE.md` it's listed. Where the new SW-side stack will own the
-register and the name is not yet pinned, `<!-- TODO: confirm reg name -->`.
+**Field → register map.** Names are pinned in `docs/ARCHITECTURE.md`
+§"AXI-Lite Live-Config Register Window" (chapter added 2026-05-03,
+Pre-Phase-2 Decision §D-2). All offsets here are relative to the
+AXI-Lite slave base `0x4000_0000`. The daemon C-API mirrors these
+offsets in `sw/include/tetra/axi_regmap.h` (S0/S7 deliverable).
 
 **Views**
 
@@ -247,27 +249,28 @@ half-applied multi-field changes.
 
 **Field → AXI register map (informative; pinned in tetra_d source).**
 
-| WebUI field | Group | Live FPGA AXI register | Persistence |
-|---|---|---|---|
-| MCC | cell | `REG_CELL_MCC` <!-- TODO: confirm reg name --> | `config.json` |
-| MNC | cell | `REG_CELL_MNC` <!-- TODO: confirm reg name --> | `config.json` |
-| CC (colour code) | cell | `REG_CELL_CC` <!-- TODO: confirm reg name --> | `config.json` |
-| LA (location area) | cell | `REG_CELL_LA` <!-- TODO: confirm reg name --> | `config.json` |
-| RX freq | rf | AD9361 via libiio (no AXI reg) | `config.json` |
-| TX freq | rf | AD9361 via libiio | `config.json` |
-| TX power dBm | rf | AD9361 attenuator + `REG_TX_GAIN_TRIM` <!-- TODO: confirm reg name --> | `config.json` |
-| Cipher mode | cipher | `REG_CIPHER_MODE` <!-- TODO: confirm reg name --> | `config.json` |
-| Scrambler init | cipher | `REG_SCRAMBLER_INIT` <!-- TODO: confirm reg name --> | `config.json` |
-| Training sequence N | training | `REG_TS_N` <!-- TODO: confirm reg name --> | `config.json` |
-| Training sequence P | training | `REG_TS_P` <!-- TODO: confirm reg name --> | `config.json` |
-| Training sequence Q | training | `REG_TS_Q` <!-- TODO: confirm reg name --> | `config.json` |
-| Slot purpose table | slot_table | UMAC scheduler config block (no single reg; daemon writes a struct via AXI window) <!-- TODO: confirm reg name --> | `config.json` |
-| AST TTL multiframes | policy | SW-side now (per migration plan §"FPGA modules to delete from carry-over"); ex `0x1A8` | DB |
+| WebUI field | Group | Live FPGA AXI register | Offset | Width | Persistence |
+|---|---|---|---|---|---|
+| MCC | cell | `REG_CELL_MCC` | `0x000` | `[9:0]` | `config.json` |
+| MNC | cell | `REG_CELL_MNC` | `0x004` | `[13:0]` | `config.json` |
+| CC (colour code) | cell | `REG_CELL_CC` | `0x008` | `[5:0]` | `config.json` |
+| LA (location area) | cell | `REG_CELL_LA` | `0x00C` | `[13:0]` | `config.json` |
+| RX freq | rf | `REG_RX_CARRIER_HZ` (daemon also shadow-writes AD9361 LO via libiio) | `0x010` | `[31:0]` | `config.json` |
+| TX freq | rf | `REG_TX_CARRIER_HZ` (daemon also shadow-writes AD9361 LO via libiio) | `0x014` | `[31:0]` | `config.json` |
+| TX power dBm | rf | `REG_TX_ATT` (AD9361 attenuator, 0.25 dB units) + `REG_TX_GAIN_TRIM` (signed dB digital trim) | `0x08C` + `0x018` | `[7:0]` + signed `[7:0]` | `config.json` |
+| Cipher mode | cipher | `REG_CIPHER_MODE` | `0x01C` | `[1:0]` | `config.json` |
+| Scrambler init | cipher | `REG_SCRAMBLER_INIT` | `0x020` | `[31:0]` | `config.json` |
+| Training sequence N | training | `REG_TS_N` (Normal Training Sequence) | `0x024` | `[11:0]` | `config.json` |
+| Training sequence P | training | `REG_TS_P` (Pilot/Sync Training Sequence) | `0x028` | `[11:0]` | `config.json` |
+| Training sequence Q | training | `REG_TS_Q` (Extended Training Sequence) | `0x02C` | `[11:0]` | `config.json` |
+| Slot purpose table | slot_table | `SLOT_TABLE` window — 20 entries × 4 bytes; daemon writes the array as a single strided AXI burst. Per-entry layout: `[1:0]` slot_type (RA/Common/Unalloc/Allocated), `[25:2]` assigned_ssi (24-bit), `[29:26]` aach_hint (selector into AACH-Modes table; UMAC clamps invalid combinations) | `0x030..0x07F` | 80 B | `config.json` |
+| AST TTL multiframes | policy | SW-side now (per migration plan §"FPGA modules to delete from carry-over"); ex `0x1A8` | — | — | DB |
 
-`<!-- TODO: confirm reg name -->` markers above must be resolved against the
-real AXI map in `docs/ARCHITECTURE.md` — at time of writing ARCHITECTURE.md
-documents the SAP frames and AACH semantics but does not yet enumerate the
-named live-config registers. Pin the names when the new RTL top-level lands.
+All names above are pinned against `docs/ARCHITECTURE.md`
+§"AXI-Lite Live-Config Register Window". Reset defaults (Gold-Cell:
+MCC=262, MNC=1010, CC=1, scrambler=`0x4183_F207`, RX carrier
+392_987_500 Hz, TX carrier 382_891_062 Hz) and the carrier-frequency
+caveat between Gold captures live in that chapter.
 
 ---
 
