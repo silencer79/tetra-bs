@@ -165,7 +165,7 @@ Run as separate sessions. Each TODO is its own context to avoid quality drop.
 - [ ] TODO-A: Gold-Ref `Todo`-Felder extraction
 - [ ] TODO-B: WebUI spec
 - [ ] TODO-C: Agent topology
-- [ ] TODO-D: Toolchain audit
+- [x] TODO-D: Toolchain audit (`docs/HARDWARE.md` §Toolchain + Dependencies, 2026-05-03)
 
 ### Phase 2 — Big-Bang implementation (parallel agents)
 
