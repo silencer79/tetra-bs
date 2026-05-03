@@ -1,0 +1,46 @@
+# sw/external/xilinx_axidma/Makefile.kmod — stub.
+#
+# Owned by S1. Documents the kernel-module build invocation for the
+# vendored Jacob-Feder xilinx_axidma driver.
+#
+# This is a STUB. Vendoring has not yet been performed (the upstream
+# clone needs network access — see README.md "Pinned commit" status).
+# Run scripts/build/vendor-axidma.sh first to populate the upstream
+# sources under this directory; that script then leaves you with a
+# real Makefile in driver/ that this stub will defer to.
+#
+# Once vendoring is done, the canonical invocation is:
+#
+#   make -f Makefile.kmod module \
+#       ARCH=arm \
+#       CROSS_COMPILE=arm-linux-gnueabihf- \
+#       KDIR=/lib/modules/5.10.0-98248-g1bbe32fa5182-dirty/build
+#
+# (see HARDWARE.md §3 for the live board kernel version).
+#
+# .PHONY guard so even an accidental 'make all' surfaces the message.
+
+.PHONY: module all clean help
+.DEFAULT_GOAL := help
+
+VENDOR_SCRIPT := $(dir $(lastword $(MAKEFILE_LIST)))../../../scripts/build/vendor-axidma.sh
+DRIVER_DIR    := $(dir $(lastword $(MAKEFILE_LIST)))driver
+
+help:
+	@echo "xilinx_axidma kernel-module build — STUB"
+	@echo ""
+	@echo "Vendoring not yet performed; run"
+	@echo "    $(VENDOR_SCRIPT)"
+	@echo "first to clone the upstream repo at the pinned commit."
+	@echo ""
+	@echo "After vendoring, build with:"
+	@echo "    make -C $(DRIVER_DIR) modules \\"
+	@echo "        ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- \\"
+	@echo "        KDIR=/lib/modules/\$$(uname -r)/build"
+
+module all:
+	@echo "FAIL: vendoring not yet performed; run scripts/build/vendor-axidma.sh first" >&2
+	@exit 2
+
+clean:
+	@true
