@@ -1,18 +1,15 @@
-# tb_cdc_handshake/Makefile
-TOP      := tb_cdc_handshake
-RTL_DIR  := ../../../rtl/infra/cdc
-SRCS     := $(RTL_DIR)/cdc_handshake.v $(TOP).v
-BIN      := $(TOP).vvp
+# tb/rtl/tb_cdc_handshake/Makefile — A4 CDC handshake TB.
 
-.PHONY: all run clean
-all: run
+REPO_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../../..)
+include $(REPO_ROOT)/tb/rtl/Makefile.inc
 
-$(BIN): $(SRCS)
-	iverilog -g2001 -o $@ $(SRCS)
+TB_NAME := tb_cdc_handshake
+SRCS    := tb_cdc_handshake.v $(REPO_ROOT)/rtl/infra/cdc/cdc_handshake.v
 
-run: $(BIN)
-	@vvp $(BIN) | tee $(TOP).log
-	@grep -q '^PASS' $(TOP).log
+$(eval $(call rtl_tb_rule,$(TB_NAME),$(SRCS)))
+
+.PHONY: all clean
+all: $(TB_NAME)
 
 clean:
-	rm -f $(BIN) $(TOP).log
+	rm -rf $(RTL_BUILD)

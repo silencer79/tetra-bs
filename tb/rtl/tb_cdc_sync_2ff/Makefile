@@ -1,18 +1,15 @@
-# tb_cdc_sync_2ff/Makefile
-TOP      := tb_cdc_sync_2ff
-RTL_DIR  := ../../../rtl/infra/cdc
-SRCS     := $(RTL_DIR)/cdc_sync_2ff.v $(TOP).v
-BIN      := $(TOP).vvp
+# tb/rtl/tb_cdc_sync_2ff/Makefile — A4 CDC sync_2ff TB.
 
-.PHONY: all run clean
-all: run
+REPO_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../../..)
+include $(REPO_ROOT)/tb/rtl/Makefile.inc
 
-$(BIN): $(SRCS)
-	iverilog -g2001 -o $@ $(SRCS)
+TB_NAME := tb_cdc_sync_2ff
+SRCS    := tb_cdc_sync_2ff.v $(REPO_ROOT)/rtl/infra/cdc/cdc_sync_2ff.v
 
-run: $(BIN)
-	@vvp $(BIN) | tee $(TOP).log
-	@grep -q '^PASS' $(TOP).log
+$(eval $(call rtl_tb_rule,$(TB_NAME),$(SRCS)))
+
+.PHONY: all clean
+all: $(TB_NAME)
 
 clean:
-	rm -f $(BIN) $(TOP).log
+	rm -rf $(RTL_BUILD)
