@@ -74,7 +74,7 @@ t₀+0ms      ↑MS→BS  Frag-1   115sym SCH/HU
                     MAC-ACCESS pdu=0 fill=0 enc=0 SSI=0x282FF4 frag=1 res_req=0
                     LLC: BL-DATA(NS=0)
                     MLE: MM/U-LOC-UPD-DEMAND  type=ITSI-Attach
-                         class_of_ms=0x1A0F60 ESM=1 (more optionals follow in Frag-2)
+                         class_of_ms=0x1A1060 ESM=1 (more optionals follow in Frag-2)
 
 t₀+57ms     ↑MS→BS  Frag-2   115sym SCH/HU                          [Δ = 1 Frame]
                     hex: D4 1C 3C 02 40 50 2F 4D 63 20 00 00
