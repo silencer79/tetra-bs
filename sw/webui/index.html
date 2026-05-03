@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>tetra-bs — Operator Console</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 16px; }
+h1 { font-size: 1.3em; margin-bottom: 12px; color: #00d4ff; }
+h2 { font-size: 1em; margin: 16px 0 8px; color: #7eb8da; border-bottom: 1px solid #333; padding-bottom: 4px; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
+label { font-size: 0.85em; color: #aaa; display: flex; flex-direction: column; gap: 2px; }
+label span { font-size: 0.75em; color: #666; }
+input, select { background: #16213e; border: 1px solid #333; color: #e0e0e0; padding: 6px 8px;
+  border-radius: 4px; font-size: 0.9em; font-family: monospace; }
+.tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid #333; }
+.tab { padding: 8px 16px; cursor: pointer; background: transparent; color: #aaa;
+  font-size: 0.9em; border-radius: 4px 4px 0 0; border: 1px solid transparent; border-bottom: none; }
+.tab.active { background: #16213e; border-color: #333; color: #00d4ff; }
+.view { display: none; }
+.view.active { display: block; }
+table { width: 100%; border-collapse: collapse; margin-top: 6px; font-family: monospace; font-size: 0.85em; }
+th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid #222; }
+th { background: #16213e; color: #7eb8da; font-weight: 600; font-size: 0.8em; }
+td.num { text-align: right; }
+.kv { font-family: monospace; font-size: 0.85em; margin: 6px 0; color: #aaa; }
+.kv b { color: #00d4ff; font-weight: 600; }
+.checks { display: flex; gap: 14px; flex-wrap: wrap; padding: 4px 0; }
+.checks label { flex-direction: row; align-items: center; gap: 6px; }
+button { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;
+  background: #00d4ff; color: #000; font-size: 0.85em; }
+button:hover { background: #00b8d9; }
+button.danger { background: #ff4444; color: #fff; }
+.warn { background: #3d2510; color: #f0c060; padding: 8px 12px; border-radius: 4px;
+  font-family: monospace; font-size: 0.85em; margin: 8px 0; }
+.msg { margin-top: 8px; padding: 6px 10px; border-radius: 4px; font-size: 0.85em;
+  font-family: monospace; display: none; }
+.msg.ok  { background: #0a3d1f; color: #66dd99; display: block; }
+.msg.err { background: #3d1010; color: #ff8888; display: block; }
+.layer-card { background: #16213e; border: 1px solid #333; border-radius: 4px;
+  padding: 8px 10px; margin: 4px 0; font-family: monospace; font-size: 0.8em; }
+.layer-card .name { color: #00d4ff; font-weight: 600; }
+.layer-card .state { float: right; color: #66dd99; }
+.layer-card .state.err { color: #ff8888; }
+</style>
+</head>
+<body>
+
+<h1>tetra-bs — Operator Console
+  <span id="cellTag" class="kv"><b id="cell-sync">--</b> · uptime <b id="cell-up">--</b></span>
+</h1>
+
+<div class="tabs">
+  <div class="tab active" id="tab-live"     onclick="showTab('live')">Live Status</div>
+  <div class="tab"        id="tab-profiles" onclick="showTab('profiles')">Profiles</div>
+  <div class="tab"        id="tab-entities" onclick="showTab('entities')">Entities</div>
+</div>
+
+<!-- ============== LIVE TAB ============== -->
+<div class="view active" id="view-live">
+  <h2>Cell summary</h2>
+  <div class="kv" id="live-kv">(loading)</div>
+
+  <h2>Layer states</h2>
+  <div id="live-layers">(loading)</div>
+
+  <h2>PHY counters</h2>
+  <div class="kv" id="live-phy">(loading)</div>
+
+  <h2>DMA counters</h2>
+  <div class="kv" id="live-dma">(loading)</div>
+</div>
+
+<!-- ============== PROFILES TAB ============== -->
+<div class="view" id="view-profiles">
+  <h2>Profile Table (6 slots × 32 bit, references/reference_subscriber_db_arch.md)</h2>
+  <table id="prof-tbl">
+    <thead><tr>
+      <th>id</th><th>packed</th>
+      <th>max_call_dur</th><th>hangtime</th><th>priority</th>
+      <th>gila_class</th><th>gila_lifetime</th><th>reserved3</th>
+      <th>V</th><th>D</th><th>R</th><th>valid</th>
+      <th></th>
+    </tr></thead>
+    <tbody id="prof-tbody"><tr><td colspan="13">(loading)</td></tr></tbody>
+  </table>
+
+  <h2>Edit Profile</h2>
+  <div class="warn">
+    Slot 0 ist M2-Default <code>0x0000_088F</code>
+    (gila_class=4, gila_lifetime=1, permits=1, valid=1).
+    Daemon enforces <code>EROFS</code> on Profile 0 mutation regardless of
+    this form (OPERATIONS.md §2).
+  </div>
+  <form id="prof-form" onsubmit="return saveProfile(event)">
+    <div class="grid">
+      <label>id <span>0..5</span>
+        <select name="id" id="prof-id">
+          <option value="0">0 (M2 default = 0x0000_088F, locked)</option>
+          <option value="1" selected>1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+          <option value="5">5</option>
+        </select>
+      </label>
+      <label>max_call_duration <span>0..255 sec, 0=unlimited</span>
+        <input name="max_call_duration" type="number" value="0" min="0" max="255">
+      </label>
+      <label>hangtime <span>0..255 (×100 ms)</span>
+        <input name="hangtime_100ms" type="number" value="0" min="0" max="255">
+      </label>
+      <label>priority <span>0..15</span>
+        <input name="priority" type="number" value="0" min="0" max="15">
+      </label>
+      <label>gila_class <span>0..7 (M2 default = 4)</span>
+        <input name="gila_class" type="number" value="4" min="0" max="7">
+      </label>
+      <label>gila_lifetime <span>0..3 (M2 default = 1)</span>
+        <input name="gila_lifetime" type="number" value="1" min="0" max="3">
+      </label>
+      <label>reserved3 <span>0..7 (preserved bit-exact)</span>
+        <input name="reserved3" type="number" value="0" min="0" max="7">
+      </label>
+    </div>
+    <div class="checks">
+      <label><input name="permit_voice" type="checkbox" checked> permit_voice</label>
+      <label><input name="permit_data"  type="checkbox" checked> permit_data</label>
+      <label><input name="permit_reg"   type="checkbox" checked> permit_reg</label>
+    </div>
+    <div style="margin-top:10px;">
+      <button type="submit">Apply</button>
+      <button type="button" class="danger" onclick="deleteProfile()">Delete</button>
+    </div>
+  </form>
+  <div id="prof-msg" class="msg"></div>
+</div>
+
+<!-- ============== ENTITIES TAB ============== -->
+<div class="view" id="view-entities">
+  <h2>Entity Table (256 slots)</h2>
+  <table id="ent-tbl">
+    <thead><tr>
+      <th>slot</th><th>entity_id</th><th>type</th><th>profile_id</th><th>valid</th>
+    </tr></thead>
+    <tbody id="ent-tbody"><tr><td colspan="5">(loading)</td></tr></tbody>
+  </table>
+</div>
+
+<script>
+function $(s) { return document.querySelector(s); }
+function fmt(v) { return (v === null || v === undefined) ? '--' : v; }
+function showTab(name) {
+  ['live','profiles','entities'].forEach(function(n) {
+    document.getElementById('view-' + n).classList.toggle('active', n === name);
+    document.getElementById('tab-'  + n).classList.toggle('active', n === name);
+  });
+  if (name === 'profiles') refreshProfiles();
+  if (name === 'entities') refreshEntities();
+}
+
+/* ---- Live tab ---- */
+function refreshLive() {
+  fetch('/cgi-bin/status.cgi?op=status.snapshot')
+    .then(function(r) { return r.json(); })
+    .then(function(j) {
+      if (!j.ok) { $('#live-kv').textContent = 'error: ' + (j.error && j.error.code); return; }
+      var d = j.data || {};
+      var s = d.summary || {};
+      $('#cell-sync').textContent = s.cell_synced ? 'SYNC' : 'UNSYNC';
+      $('#cell-up').textContent   = fmt(s.uptime_s) + ' s';
+      $('#live-kv').innerHTML =
+        'MCC=<b>' + fmt(s.mcc) + '</b> · MNC=<b>' + fmt(s.mnc) +
+        '</b> · CC=<b>' + fmt(s.cc) + '</b> · LA=<b>' + fmt(s.la) +
+        '</b> · RX=<b>' + fmt(s.rx_freq_hz) + '</b> Hz · TX=<b>' +
+        fmt(s.tx_freq_hz) + '</b> Hz · sw=<b>' + fmt(s.sw_version) +
+        '</b> · bs=<b>' + fmt(s.fpga_bitstream_id) + '</b>';
+
+      var L = d.layers || {};
+      var lc = '';
+      ['phy','lmac','umac','llc','mle','mm','cmce','sndcp'].forEach(function(name) {
+        var l = L[name] || {};
+        lc += '<div class="layer-card"><span class="name">' + name +
+              '</span><span class="state ' + (l.error_count > 0 ? 'err' : '') +
+              '">' + fmt(l.state) + ' (errs=' + fmt(l.error_count) + ')</span></div>';
+      });
+      $('#live-layers').innerHTML = lc || '(no layers reported)';
+
+      var phy = d.phy_stats || {};
+      $('#live-phy').innerHTML =
+        'sync=<b>' + (phy.sync_lock ? 'LOCK' : 'free') + '</b> · burst_rate=<b>' +
+        fmt(phy.burst_detect_rate) + '</b> · crc_pass=<b>' + fmt(phy.crc_pass) +
+        '</b> · crc_fail=<b>' + fmt(phy.crc_fail) + '</b> · viterbi_be=<b>' +
+        fmt(phy.viterbi_be) + '</b> · agc=<b>' + fmt(phy.agc_gain_db) +
+        '</b> dB · rssi=<b>' + fmt(phy.rssi_dbm) + '</b> dBm';
+
+      var dma = d.dma_stats || {};
+      $('#live-dma').innerHTML =
+        'tma_rx_frames=<b>' + fmt(dma.ch1_rx_frames) +
+        '</b> · tma_tx_frames=<b>' + fmt(dma.ch2_tx_frames) +
+        '</b> · tmd_rx_frames=<b>' + fmt(dma.ch3_rx_frames) +
+        '</b> · tmd_tx_frames=<b>' + fmt(dma.ch4_tx_frames) +
+        '</b> · overruns=<b>' + fmt(dma.ch1_overruns) +
+        '</b> · underruns=<b>' + fmt(dma.ch2_underruns) + '</b>';
+    })
+    .catch(function(e) { $('#live-kv').textContent = 'fetch error: ' + e; });
+}
+
+/* ---- Profiles tab ---- */
+function refreshProfiles() {
+  fetch('/cgi-bin/profiles.cgi?op=profile.list')
+    .then(function(r) { return r.json(); })
+    .then(function(j) {
+      var tb = $('#prof-tbody');
+      tb.innerHTML = '';
+      if (!j.ok) { tb.innerHTML = '<tr><td colspan="13">error: ' + (j.error && j.error.code) + '</td></tr>'; return; }
+      (j.data || []).forEach(function(p) {
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td class="num">' + p.id + '</td>' +
+          '<td>' + (p.packed_word_hex || '--') + (p.locked ? ' &#x1F512;' : '') + '</td>' +
+          '<td class="num">' + fmt(p.max_call_duration) + '</td>' +
+          '<td class="num">' + fmt(p.hangtime_100ms || p.hangtime) + '</td>' +
+          '<td class="num">' + fmt(p.priority) + '</td>' +
+          '<td class="num">' + fmt(p.gila_class) + '</td>' +
+          '<td class="num">' + fmt(p.gila_lifetime) + '</td>' +
+          '<td class="num">' + fmt(p.reserved3) + '</td>' +
+          '<td class="num">' + (p.permit_voice ? '1' : '0') + '</td>' +
+          '<td class="num">' + (p.permit_data  ? '1' : '0') + '</td>' +
+          '<td class="num">' + (p.permit_reg   ? '1' : '0') + '</td>' +
+          '<td class="num">' + (p.valid ? '1' : '0') + '</td>' +
+          '<td><button type="button">Edit</button></td>';
+        tr.querySelector('button').onclick = function() { loadProfileForm(p); };
+        tb.appendChild(tr);
+      });
+    })
+    .catch(function(e) {
+      $('#prof-tbody').innerHTML = '<tr><td colspan="13">fetch error: ' + e + '</td></tr>';
+    });
+}
+function loadProfileForm(p) {
+  var f = $('#prof-form');
+  f.id.value = p.id;
+  f.max_call_duration.value = p.max_call_duration || 0;
+  f.hangtime_100ms.value    = p.hangtime_100ms || p.hangtime || 0;
+  f.priority.value          = p.priority || 0;
+  f.gila_class.value        = p.gila_class != null ? p.gila_class : 4;
+  f.gila_lifetime.value     = p.gila_lifetime != null ? p.gila_lifetime : 1;
+  f.reserved3.value         = p.reserved3 || 0;
+  f.permit_voice.checked = !!p.permit_voice;
+  f.permit_data.checked  = !!p.permit_data;
+  f.permit_reg.checked   = !!p.permit_reg;
+}
+function saveProfile(ev) {
+  ev.preventDefault();
+  var f = $('#prof-form');
+  var body = {
+    op: 'profile.put',
+    id: parseInt(f.id.value, 10),
+    max_call_duration: parseInt(f.max_call_duration.value, 10),
+    hangtime_100ms:    parseInt(f.hangtime_100ms.value, 10),
+    priority:          parseInt(f.priority.value, 10),
+    gila_class:        parseInt(f.gila_class.value, 10),
+    gila_lifetime:     parseInt(f.gila_lifetime.value, 10),
+    reserved3:         parseInt(f.reserved3.value, 10),
+    permit_voice: f.permit_voice.checked,
+    permit_data:  f.permit_data.checked,
+    permit_reg:   f.permit_reg.checked
+  };
+  fetch('/cgi-bin/profiles.cgi', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(j) {
+    var m = $('#prof-msg');
+    m.className = j.ok ? 'msg ok' : 'msg err';
+    m.textContent = j.ok
+      ? ('OK: id=' + j.data.id + ' packed=' + j.data.packed_word_hex)
+      : ('ERR ' + (j.error && j.error.code) + ': ' + (j.error && j.error.message));
+    if (j.ok) refreshProfiles();
+  });
+  return false;
+}
+function deleteProfile() {
+  var id = parseInt($('#prof-form').id.value, 10);
+  fetch('/cgi-bin/profiles.cgi', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ op: 'profile.delete', id: id })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function() { refreshProfiles(); });
+}
+
+/* ---- Entities tab ---- */
+function refreshEntities() {
+  fetch('/cgi-bin/entities.cgi?op=entity.list&offset=0&limit=64')
+    .then(function(r) { return r.json(); })
+    .then(function(j) {
+      var tb = $('#ent-tbody');
+      tb.innerHTML = '';
+      if (!j.ok) { tb.innerHTML = '<tr><td colspan="5">error: ' + (j.error && j.error.code) + '</td></tr>'; return; }
+      var items = (j.data && j.data.items) || [];
+      if (items.length === 0) { tb.innerHTML = '<tr><td colspan="5">(empty)</td></tr>'; return; }
+      items.forEach(function(e) {
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td class="num">' + e.slot + '</td>' +
+          '<td>' + (e.entity_id || '--') + '</td>' +
+          '<td>' + (e.entity_type || '--') + '</td>' +
+          '<td class="num">' + e.profile_id + '</td>' +
+          '<td class="num">' + (e.valid ? '1' : '0') + '</td>';
+        tb.appendChild(tr);
+      });
+    });
+}
+
+/* ---- bootstrap ---- */
+refreshLive();
+setInterval(refreshLive, 1000);
+</script>
+</body>
+</html>
