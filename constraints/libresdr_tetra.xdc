@@ -1,13 +1,28 @@
 # =============================================================================
 # libresdr_tetra.xdc — Pin Constraints + Timing
-# Project: tetra-zynq-phy
+# Project: tetra-bs (migrated from tetra-zynq-phy)
 # Target:  LibreSDR (Zynq-7020 XC7Z020-CLG484 + AD9361)
 # Tool:    Vivado 2022.2
 #
 # Pin assignments verified from:
 #   libresdr/system.xdc  — OpenWifi reference, tested on LibreSDR hardware
 #
-# Top Module: tetra_system_top
+# Top Module: tetra_top   (was: tetra_system_top in tetra-zynq-phy carry-over)
+#
+# IF_TETRA_TOP_v1 (Agent A5) port-name changes vs carry-over xdc:
+#   - All AD9361 LVDS pin names UNCHANGED (rx_clk_in_p/n, rx_frame_in_p/n,
+#     rx_data_in_p[5:0]/n, tx_clk_out_p/n, tx_frame_out_p/n,
+#     tx_data_out_p[5:0]/n) — carry-over verbatim per A5 contract.
+#   - All AD9361 control / GPIO pin names UNCHANGED (enable, txnrx,
+#     spi_csn, spi_clk, spi_mosi, spi_miso, gpio_status[7:0],
+#     gpio_ctl[3:0], gpio_en_agc, gpio_sync, gpio_resetb).
+#   - All board-misc IO pin names UNCHANGED (iic_scl, iic_sda, pl_led0,
+#     pl_led1, dac_sync, dac_sclk, dac_din).
+#   - 4× AXI-DMA IRQ lines (irq_tma_rx_o, irq_tma_tx_o, irq_tmd_rx_o,
+#     irq_tmd_tx_o) and the AXI-MM master ports / AXI-Lite slave port
+#     are Block-Design-internal connections to PS7 (no external pin
+#     constraints). Their GIC SPI numbers are pinned in
+#     `dts/tetra_pl_overlay.dtsi` (29..32).
 # =============================================================================
 
 # =============================================================================
