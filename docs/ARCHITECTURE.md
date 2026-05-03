@@ -373,7 +373,11 @@ agent A1 deliverable).
 | `0x154` | `REG_UMAC_DLQ_DEPTH` | `[7:0]` | `0` | `tetra_dl_signal_queue.v` | Current DL signal queue depth (pending TX PDUs). |
 | `0x158` | `REG_UMAC_DLQ_DROPS` | `[15:0]` | `0` | `tetra_dl_signal_queue.v` | DL queue overflow drops. |
 | `0x15C` | `REG_UMAC_REASM_FAIL_CNT` | `[15:0]` | `0` | `tetra_ul_demand_reassembly.v` | Frag-1+Frag-2 reassembly failures (mismatched LI / SSI / timeout). |
-| `0x160..0x1FF` | reserved (telemetry) | — | `0` | — | reads as 0; allows future per-layer counters without bumping `REG_VERSION`. |
+| `0x160` | `REG_TMASAP_RX_FRAMES_CNT` | `[31:0]` | `0` | `tetra_tmasap_rx_framer.v` (A2) | TMAS frames emitted on the FPGA→PS signalling-RX channel. |
+| `0x164` | `REG_TMASAP_TX_FRAMES_CNT` | `[31:0]` | `0` | `tetra_tmasap_tx_framer.v` (A2) | TMAS frames consumed from the PS→FPGA signalling-TX channel and committed to the UMAC DL signal queue. |
+| `0x168` | `REG_TMASAP_TX_ERR_CNT` | `[15:0]` | `0` | `tetra_tmasap_tx_framer.v` (A2) | TX framer drops: bad magic word, frame_len/pdu_len_bits mismatch, or premature tlast. Saturates at `0xFFFF`. |
+| `0x16C` | `REG_TMAR_FRAMES_CNT` | `[31:0]` | `0` | `tetra_tmasap_rx_framer.v` (A2) | TMAR (`0x544D_4152`) report frames emitted on the FPGA→PS signalling-RX channel (shared AXIS-out with TMAS). |
+| `0x170..0x1FF` | reserved (telemetry) | — | `0` | — | reads as 0; allows future per-layer counters without bumping `REG_VERSION`. |
 
 ### Test / Scratch region (`0x200..0x2FF`)
 
