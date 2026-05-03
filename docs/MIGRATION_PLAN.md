@@ -746,15 +746,16 @@ the BD wraps `tetra_top` inside an IPI-generated hierarchy; see
 
 **Known follow-ups (deferred, do NOT block Phase 4):**
 
-1. *XDC cell-name patterns stale.* The multicycle paths declared in
-   `constraints/libresdr_tetra.xdc` reference cell names like
-   `*u_ul_sch_hu/vit_soft1_sys_reg*` that no longer match after Vivado
-   wraps tetra_top inside `tetra_system_i/tetra_top_0/inst/u_tetra/...`.
-   Vivado emits 5 CRITICAL_WARNINGs at synth_1 (`set_multicycle_path:
-   No valid object(s) found`) and the corresponding paths fall back to
-   the default 10 ns clk_axi setup window — this is the source of the
-   12 failing endpoints / -0.335 ns WNS. Fix: update XDC patterns to
-   the new BD hierarchy prefix.
+1. *XDC cell-name patterns* — partly resolved 2026-05-03 evening.
+   `*u_accept_builder/...` constraints removed (Accept-Builder moved to
+   sw/mm/, no longer an FPGA cell). The remaining `*u_ul_sch_hu/...`
+   patterns DO match through the BD wrapper hierarchy (leading `*` in
+   `-filter {NAME =~ *...}` works); their multicycle constraints apply
+   correctly. WNS still −0.335 ns / 12 failing endpoints because the
+   constrained paths are PHY-side (RRC + Viterbi survivor-state) where
+   the 4-cycle multicycle window is not quite enough — would need
+   5-cycle multicycle or logic-restructuring. Acceptable per the
+   Phase 3.6 contract (WNS ≥ −0.5 ns). Phase 4 air-test ready.
 
 2. *clk_sys = clk_axi (= FCLK_CLK0 = 100 MHz).* The IF_TETRA_TOP_v1
    port-list keeps clk_sys as a separate input but the BD currently
@@ -763,11 +764,13 @@ the BD wraps `tetra_top` inside an IPI-generated hierarchy; see
    driven by a different FCLK_CLK1 frequency or AD9361-derived clock).
    No action required for Phase 4 air-test.
 
-3. *clock-groups XDC line stale.* `set_clock_groups -asynchronous
-   -group [get_clocks rx_clk] -group [get_clocks clk_fpga_0]` emits 2
-   CRITICAL_WARNINGs because `clk_fpga_0` is renamed `FCLK_CLK0` in
-   the new BD. Functional impact: rx_clk/FCLK_CLK0 paths get full
-   timing analysis (currently meeting timing). Fix: update name.
+3. *clock-groups XDC line* — resolved 2026-05-03 evening. The clock
+   object is named `clk_fpga_0` (the create_clock name from the PS7
+   IP), NOT `FCLK_CLK0` (which is the PS7 port name). The XDC was
+   already correct; the original synth_1 CRITICAL_WARNING was a
+   timing-of-evaluation issue (PS7 OOC clocks don't exist at synth_1).
+   Silenced via `-quiet` flag on `set_clock_groups` and the inner
+   `get_clocks` calls.
 
 4. *Width-mismatch warnings on completer↔interconnect ID buses.* The
    completer's M_AXI_BID/RID is 1 bit; axi_interconnect's SXX_AXI_BID
