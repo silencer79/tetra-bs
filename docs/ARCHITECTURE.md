@@ -373,7 +373,10 @@ agent A1 deliverable).
 | `0x154` | `REG_UMAC_DLQ_DEPTH` | `[7:0]` | `0` | `tetra_dl_signal_queue.v` | Current DL signal queue depth (pending TX PDUs). |
 | `0x158` | `REG_UMAC_DLQ_DROPS` | `[15:0]` | `0` | `tetra_dl_signal_queue.v` | DL queue overflow drops. |
 | `0x15C` | `REG_UMAC_REASM_FAIL_CNT` | `[15:0]` | `0` | `tetra_ul_demand_reassembly.v` | Frag-1+Frag-2 reassembly failures (mismatched LI / SSI / timeout). |
-| `0x160..0x1FF` | reserved (telemetry) | — | `0` | — | reads as 0; allows future per-layer counters without bumping `REG_VERSION`. |
+| `0x160` | `REG_TMDSAP_TX_FRAMES_CNT` | `[31:0]` | `0` | A3 `tetra_tmdsap_tx_framer.v` | Saturating count of successfully decoded TMDC frames handed off to LMAC TX (PS→FPGA voice path). See `docs/references/tmdsap_port_contract.md`. |
+| `0x164` | `REG_TMDSAP_RX_FRAMES_CNT` | `[31:0]` | `0` | A3 `tetra_tmdsap_rx_framer.v` | Saturating count of TMDC frames emitted on AXIS-master to A1's S2MM port (FPGA→PS voice path). |
+| `0x168` | `REG_TMDSAP_ERR_CNT` | `[31:0]` | `0` | A3 `tetra_tmdsap_tx_framer.v` | Saturating count of TMDC framing errors (bad magic, bad length, bad tkeep, premature/missing tlast). |
+| `0x16C..0x1FF` | reserved (telemetry) | — | `0` | — | reads as 0; allows future per-layer counters without bumping `REG_VERSION`. |
 
 ### Test / Scratch region (`0x200..0x2FF`)
 
