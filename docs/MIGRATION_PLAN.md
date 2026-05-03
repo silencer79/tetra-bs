@@ -162,7 +162,7 @@ Output: `docs/HARDWARE.md` new chapter "Toolchain + Dependencies".
 
 Run as separate sessions. Each TODO is its own context to avoid quality drop.
 
-- [ ] TODO-A: Gold-Ref `Todo`-Felder extraction
+- [x] TODO-A: Gold-Ref `Todo`-Felder extraction (`docs/references/gold_field_values.md`, 2026-05-03)
 - [ ] TODO-B: WebUI spec
 - [ ] TODO-C: Agent topology
 - [x] TODO-D: Toolchain audit (`docs/HARDWARE.md` §Toolchain + Dependencies, 2026-05-03)
