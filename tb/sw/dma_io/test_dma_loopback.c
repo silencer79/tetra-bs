@@ -15,8 +15,8 @@
  *   - TX magic auto-selection (TMA_TX → TMAS, TMD_TX → TMDC)
  *   - reject send on RX channel → -EINVAL
  *
- * Backend: mock (pipe-pair). Host x86 build never has HAVE_LIBAXIDMA
- * defined (CI is Ubuntu 24.04, libaxidma not packaged). The real-HW
+ * Backend: mock (pipe-pair). Host x86 build never has HAVE_XILINX_DMA
+ * defined (CI is Ubuntu 24.04, xilinx_dma not packaged). The real-HW
  * path is unit-tested in T2 cosim and Phase-4 live-air.
  */
 

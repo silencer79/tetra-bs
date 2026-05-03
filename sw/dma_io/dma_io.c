@@ -2,15 +2,17 @@
  *
  * Owned by S1 (S1-sw-dma-glue). Implements IF_DMA_API_v1.
  *
- * Two backends, gated by HAVE_LIBAXIDMA:
+ * Two backends, gated by HAVE_XILINX_DMA:
  *
- *   HAVE_LIBAXIDMA  defined → real backend over <libaxidma.h> (vendored
- *                   under sw/external/xilinx_axidma; cf. HARDWARE.md §4
- *                   Option B, decided 2026-05-03). Channel device paths
- *                   come from the DT overlay in feat/a1-fpga-axi-dma:
- *                   /dev/dma-axidma-tma-sap-rx, …
+ *   HAVE_XILINX_DMA  defined → real backend over the in-tree Xilinx
+ *                   `xilinx_dma.ko` already shipped on Board #1 (cf.
+ *                   HARDWARE.md §4, no 3rd-party vendoring). Channel
+ *                   device paths come from the DT overlay in
+ *                   `dts/tetra_axi_dma_overlay.dtsi`:
+ *                   /dev/dma_proxy_tma-sap-rx (or equivalent xilinx_dma
+ *                   char-dev — confirm in-situ in Phase 3), …
  *
- *   HAVE_LIBAXIDMA  undefined → pipe-pair mock for x86 host unit-tests.
+ *   HAVE_XILINX_DMA  undefined → pipe-pair mock for x86 host unit-tests.
  *                   Each channel gets one pipe-pair. dma_send_frame
  *                   writes the framed bytes into the pipe; dma_recv_frame
  *                   reads from the pipe and parses magic+length. A
@@ -55,9 +57,9 @@
  * DT label defaults — must match dts/tetra_axi_dma_overlay.dtsi from
  * feat/a1-fpga-axi-dma and HARDWARE.md §4 channel naming. Only
  * referenced by the real-HW backend, so guarded to avoid -Wunused
- * on the host (HAVE_LIBAXIDMA-undef) build.
+ * on the host (HAVE_XILINX_DMA-undef) build.
  * ------------------------------------------------------------------------- */
-#ifdef HAVE_LIBAXIDMA
+#ifdef HAVE_XILINX_DMA
 static const char *const DEFAULT_DT_LABELS[DMA_CHAN_COUNT] = {
     [DMA_CHAN_TMA_RX] = "tma-sap-rx",
     [DMA_CHAN_TMA_TX] = "tma-sap-tx",
@@ -166,7 +168,7 @@ int frame_parse_header(const uint8_t *buf,
  * Mock-backend helpers. All ifdef'd into existence; the real-HW build
  * elides this block.
  * ------------------------------------------------------------------------- */
-#ifndef HAVE_LIBAXIDMA
+#ifndef HAVE_XILINX_DMA
 
 static int mock_open_chan(DmaChanState *s)
 {
@@ -230,28 +232,32 @@ int dma_mock_inject(DmaCtx *ctx, DmaChan ch, const uint8_t *buf, size_t len)
     return 0;
 }
 
-#endif /* !HAVE_LIBAXIDMA */
+#endif /* !HAVE_XILINX_DMA */
 
 /* ---------------------------------------------------------------------------
- * Real-HW backend skeleton — only compiles when libaxidma is installed.
- * The host CI build path leaves HAVE_LIBAXIDMA undefined, so this block
- * is elided; on the board the cross-build defines HAVE_LIBAXIDMA after
- * scripts/build/vendor-axidma.sh has been run.
+ * Real-HW backend skeleton — only compiles when HAVE_XILINX_DMA is defined.
+ * Target: in-tree `xilinx_dma.ko` already shipped on Board #1 under
+ * `/root/kernel_modules32/` (HARDWARE.md §4 carry-over from the openwifi
+ * stack; matches `xlnx,axi-dma-1.00.a` device-tree compatible). No 3rd-party
+ * library, no vendoring step.
  *
- * The libaxidma API surface used here (per github.com/jacobfeder/
- * xilinx_axidma headers): axidma_init, axidma_destroy,
- * axidma_get_dma_id, axidma_oneway_transfer, axidma_twoway_transfer,
- * axidma_malloc, axidma_free.
+ * The host CI build path leaves HAVE_XILINX_DMA undefined, so this block
+ * is elided; the pipe-mock backend above is what unit-tests exercise.
+ *
+ * Real-HW implementation TODO (Phase-3): open `/dev/dma_proxy_*` (or
+ * equivalent xilinx_dma char-dev path on Kuiper) per DT label, ioctl-based
+ * start + mmap'd DMA buffer pool. Header below is a placeholder until the
+ * board's actual char-dev shape is confirmed in-situ.
  * ------------------------------------------------------------------------- */
-#ifdef HAVE_LIBAXIDMA
-#include <libaxidma.h>
+#ifdef HAVE_XILINX_DMA
+#include <xilinx_dma.h>  /* TODO: replace with /dev/dma_proxy ioctl headers */
 
 static axidma_dev_t g_axidma_dev;  /* singleton handle from axidma_init() */
 static int          g_axidma_ref;  /* refcount across DmaCtx lifetimes    */
 
 static int real_open_chan(DmaChanState *s, const char *dt_label)
 {
-    /* libaxidma binds channels by integer device-id (DT property
+    /* xilinx_dma binds channels by integer device-id (DT property
      * xlnx,device-id). The DT overlay in feat/a1-fpga-axi-dma assigns:
      *   tma-sap-rx → 0, tma-sap-tx → 1, tmd-sap-rx → 2, tmd-sap-tx → 3.
      * We resolve dt_label → id via a static table; future work could
@@ -293,7 +299,7 @@ static void real_close_chan(DmaChanState *s)
         g_axidma_dev = NULL;
     }
 }
-#endif /* HAVE_LIBAXIDMA */
+#endif /* HAVE_XILINX_DMA */
 
 /* ---------------------------------------------------------------------------
  * Public API.
@@ -309,10 +315,10 @@ int dma_init(DmaCtx *ctx, const DmaCfg *cfg)
     }
 
     /* Decide backend. Mock if either: cfg->force_mock, or we were not
-     * built with HAVE_LIBAXIDMA. The host x86 unit-test build is the
+     * built with HAVE_XILINX_DMA. The host x86 unit-test build is the
      * latter. */
     bool use_mock = (cfg != NULL && cfg->force_mock);
-#ifndef HAVE_LIBAXIDMA
+#ifndef HAVE_XILINX_DMA
     use_mock = true;
 #endif
     ctx->using_mock = use_mock;
@@ -321,15 +327,15 @@ int dma_init(DmaCtx *ctx, const DmaCfg *cfg)
         DmaChanState *s = &ctx->chans[i];
         int rc;
         if (use_mock) {
-#ifndef HAVE_LIBAXIDMA
+#ifndef HAVE_XILINX_DMA
             rc = mock_open_chan(s);
 #else
-            rc = -ENOSYS;  /* libaxidma build requested mock at runtime —
+            rc = -ENOSYS;  /* xilinx_dma build requested mock at runtime —
                               not supported (would require re-building
-                              without libaxidma). */
+                              without xilinx_dma). */
 #endif
         } else {
-#ifdef HAVE_LIBAXIDMA
+#ifdef HAVE_XILINX_DMA
             const char *lbl = (cfg != NULL && cfg->chan_dt_labels[i] != NULL)
                             ? cfg->chan_dt_labels[i]
                             : DEFAULT_DT_LABELS[i];
@@ -342,7 +348,7 @@ int dma_init(DmaCtx *ctx, const DmaCfg *cfg)
             /* Roll back any partially-opened channels so the caller
              * sees an all-or-nothing init. */
             for (int j = 0; j < i; ++j) {
-#ifndef HAVE_LIBAXIDMA
+#ifndef HAVE_XILINX_DMA
                 mock_close_chan(&ctx->chans[j]);
 #else
                 real_close_chan(&ctx->chans[j]);
@@ -358,7 +364,7 @@ void dma_close(DmaCtx *ctx)
 {
     if (ctx == NULL) return;
     for (int i = 0; i < DMA_CHAN_COUNT; ++i) {
-#ifndef HAVE_LIBAXIDMA
+#ifndef HAVE_XILINX_DMA
         mock_close_chan(&ctx->chans[i]);
 #else
         real_close_chan(&ctx->chans[i]);
@@ -371,10 +377,10 @@ int dma_get_irq_fd(DmaCtx *ctx, DmaChan ch)
     if (ctx == NULL || ch >= DMA_CHAN_COUNT) return -EINVAL;
     DmaChanState *s = &ctx->chans[(int) ch];
     if (!s->opened) return -EBADF;
-#ifndef HAVE_LIBAXIDMA
+#ifndef HAVE_XILINX_DMA
     return s->pipe_rd;
 #else
-    /* libaxidma has no per-channel IRQ FD; the daemon polls via the
+    /* xilinx_dma has no per-channel IRQ FD; the daemon polls via the
      * char-dev FD instead. Caller must axidma_set_callback() for the
      * full lifecycle. */
     return -ENOSYS;
@@ -417,7 +423,7 @@ int dma_send_frame(DmaCtx        *ctx,
     be32_store(hdr,     (uint32_t) TX_MAGIC[ch]);
     be32_store(hdr + 4, (uint32_t) len);
 
-#ifndef HAVE_LIBAXIDMA
+#ifndef HAVE_XILINX_DMA
     /* Two writes; pipes are atomic up to PIPE_BUF (4096 on Linux),
      * so as long as len ≤ DMA_FRAME_MAX_PAYLOAD = 4096 the payload
      * write is a single syscall — no interleaving with concurrent
@@ -477,7 +483,7 @@ int dma_send_frame(DmaCtx        *ctx,
  */
 static ssize_t reasm_read_one(DmaChanState *s)
 {
-#ifndef HAVE_LIBAXIDMA
+#ifndef HAVE_XILINX_DMA
     if (s->reasm_used >= sizeof(s->reasm)) return 0;
     const size_t free = sizeof(s->reasm) - s->reasm_used;
     const ssize_t n   = read(s->pipe_rd, s->reasm + s->reasm_used, free);
@@ -577,7 +583,7 @@ int dma_recv_frame(DmaCtx  *ctx,
     if (rc == -EBADMSG)  return -EBADMSG;
     /* rc == 0 → fall through to the read loop. */
 
-#ifndef HAVE_LIBAXIDMA
+#ifndef HAVE_XILINX_DMA
     /* Step 2: poll once with the requested timeout. timeout_ms == 0 →
      * non-blocking poll-once; <0 → block forever. */
     struct pollfd pfd = { .fd = s->pipe_rd, .events = POLLIN, .revents = 0 };

@@ -3,8 +3,8 @@
  * Owned by S1 (S1-sw-dma-glue). Locked under interface contract
  * IF_DMA_API_v1 per docs/MIGRATION_PLAN.md §S1.
  *
- * Wraps Jacob-Feder's libaxidma (HARDWARE.md §4 Option B, vendored under
- * sw/external/xilinx_axidma/) into a 4-channel send/recv API that
+ * Wraps the in-tree Xilinx `xilinx_dma.ko` (HARDWARE.md §4) into a
+ * 4-channel send/recv API that
  * speaks the FPGA-side TmaSap/TmdSap frame format from
  * docs/ARCHITECTURE.md §"FPGA↔SW Boundary":
  *
@@ -25,8 +25,8 @@
  *   DMA_CHAN_TMD_TX  →  "tmd-sap-tx"  (PS → FPGA, voice TX)
  *
  * Self-describing: this header pulls in only stdint/stddef/stdbool. No
- * libaxidma symbols are exposed; the implementation gates real-HW vs
- * pipe-mock via HAVE_LIBAXIDMA.
+ * xilinx_dma symbols are exposed; the implementation gates real-HW vs
+ * pipe-mock via HAVE_XILINX_DMA.
  */
 #ifndef TETRA_DMA_IO_H
 #define TETRA_DMA_IO_H
@@ -97,7 +97,7 @@ int frame_parse_header(const uint8_t *buf,
 /* Per-channel maximum payload. Worst case is TmaSap signalling at one
  * 132-bit MM body + meta; TmdSap voice is 274-bit ACELP MSB-aligned
  * (44 bytes incl. magic+len). 4 KiB is a safe, comfortable upper
- * bound and matches the libaxidma SG buffer slot size. */
+ * bound and matches the xilinx_dma SG buffer slot size. */
 #define DMA_FRAME_MAX_PAYLOAD 4096u
 
 /* ---------------------------------------------------------------------------
@@ -114,7 +114,7 @@ typedef struct {
      * "tma-sap-rx" / "tma-sap-tx" / "tmd-sap-rx" / "tmd-sap-tx". */
     const char *chan_dt_labels[DMA_CHAN_COUNT];
 
-    /* If true, dma_init must NOT touch real HW (libaxidma) — used by
+    /* If true, dma_init must NOT touch real HW (xilinx_dma) — used by
      * unit tests and the host smoke build. The pipe-mock backend
      * always runs in mock mode. */
     bool force_mock;
@@ -123,7 +123,7 @@ typedef struct {
 /* DmaCtx — exposed but treat-as-opaque. Declared in the public header
  * so callers can stack-allocate without dynamic memory; field access
  * MUST go through the dma_*() API. The internal layout (pipe FDs,
- * libaxidma handles, reassembly buffer) is implementation-private and
+ * xilinx_dma handles, reassembly buffer) is implementation-private and
  * may change without bumping IF_DMA_API_v1.
  *
  * Per-channel reassembly buffer sized to one max-payload frame plus
@@ -186,7 +186,7 @@ typedef struct DmaCtx {
  *
  *   dma_get_irq_fd  File descriptor the daemon main loop polls for
  *                   epoll/poll wakeup on this channel. Real-HW
- *                   backend: char-dev FD from libaxidma. Mock
+ *                   backend: char-dev FD from xilinx_dma. Mock
  *                   backend: read-end of the per-channel pipe (read
  *                   readiness ≡ frame ready). Returns -EINVAL on
  *                   bad ch; otherwise the FD (>=0) — caller must NOT

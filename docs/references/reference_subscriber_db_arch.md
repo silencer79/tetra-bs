@@ -38,8 +38,17 @@ für schnellen Lookup.
 [ 0]     valid              1
 ```
 
-Profile 0 = "minimal-permit" (`permit_reg=1`, alles andere 0) — Default für
-Auto-Enroll.
+Profile 0 = bit-exakt **`0x0000_088F`** (Default für Auto-Enroll, read-only enforced):
+- `max_call_duration` = `0x00` (unlimited)
+- `hangtime` = `0x00`
+- `priority` = `0x0`
+- `reserved` = `0x88` (carry-over invariant; do not zero)
+- `permit_voice` = 1, `permit_data` = 1, `permit_reg` = 1, `valid` = 1
+
+Frühere Doku-Glosse "permit_reg=1, alles andere 0" war nicht bit-exakt — die
+in production verwendete Profile-0-Konstante ist `0x0000_088F` und schaltet
+Voice + Data + Reg frei; der `reserved`-Bytewert `0x88` muss bit-exakt bleiben
+(durchgängig in Carry-Over-Memos so geführt).
 
 ### AST (256 bit, 64 Slots)
 ```

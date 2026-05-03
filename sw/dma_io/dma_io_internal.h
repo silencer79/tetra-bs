@@ -22,7 +22,7 @@ extern "C" {
  * crafted (good or malformed) byte streams. Returns 0 on success or
  * -errno; -ENOSYS when the real-HW backend is in use.
  *
- * Implementation lives only in the !HAVE_LIBAXIDMA build of dma_io.c.
+ * Implementation lives only in the !HAVE_XILINX_DMA build of dma_io.c.
  */
 int dma_mock_inject(DmaCtx *ctx, DmaChan ch, const uint8_t *buf, size_t len);
 

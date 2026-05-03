@@ -88,40 +88,35 @@ the hard-float ABI links cleanly.
 | AD9361 stack | `iiod` on `:30431`, `ad9361_drv.ko` loaded (lsmod) | `lsmod`, `ss -tlnp` |
 | FPGA load | `fpga_manager` consumes `/lib/firmware/<name>.bit.bin` | `scripts/deploy.sh` |
 
-### 4. AXI-DMA driver path (decision pending)
+### 4. AXI-DMA driver path
 
 The migration plan calls for 4× AXI-DMA channels (TmaSap RX/TX, TmdSap RX/TX,
-ARCHITECTURE.md). Userspace access still has to be picked.
+ARCHITECTURE.md). Both ends of the stack come from the existing tooling — no
+3rd-party vendoring:
 
-What is on the board today (probed):
+- **FPGA side:** Xilinx LogiCORE `axi_dma:7.1` IP from the Vivado catalog
+  (Webpack-eligible for `xc7z020`). Carry-over from `tetra-zynq-phy` build at
+  `tetra/build/vivado/.../tetra_system_axi_dma_0_0.xci` confirms our prior
+  config (Scatter-Gather + S2MM_DRE + `c_addr_width=32`). Wrapped 4× by
+  `rtl/infra/tetra_axi_dma_wrapper.v` (Agent A1).
+- **Linux kernel driver:** in-tree `xilinx_dma.ko` already shipped on Board #1
+  under `/root/kernel_modules32/` (probed 2026-05-03). Matches DT compatible
+  `xlnx,axi-dma-1.00.a`. `modprobe xilinx_dma` and the four channels described
+  in `dts/tetra_axi_dma_overlay.dtsi` bind. **No 3rd-party kernel module.**
+- **Userspace:** thin glue around the standard Xilinx char-dev path. The
+  daemon (`sw/dma_io/dma_io.c`, Agent S1) defines `IF_DMA_API_v1`
+  (`dma_init`/`dma_send_frame`/`dma_recv_frame`/…) with a pipe-mock backend
+  for x86 host unit-tests and a `HAVE_XILINX_DMA`-gated real-HW path that
+  opens `/dev/dma_proxy_*` (or equivalent xilinx_dma char-dev) per DT-label
+  channel. Real-HW path is a Phase-3 task: confirm the board's exact char-dev
+  shape in-situ before wiring the ioctl/mmap calls.
 
-- Built-in driver: `dma-axi-dmac` (from ADI's `iio-oscilloscope` stack) is
-  bound to platform devices — used by AD9361 IIO path, not directly user-facing.
-- Out-of-tree modules **present but not loaded** in `/proc/modules` at audit:
-  `/root/kernel_modules32/xilinx_dma.ko` and `axidmatest.ko` (hard-float ARM
-  build), originally from `openwifi/`. `modinfo` confirms it matches
-  `xlnx,axi-dma-1.00.a` device-tree compatible strings.
-- Device-tree exposes one AXI-DMA-test node:
-  `/sys/firmware/devicetree/base/fpga-axi@0/axidmatest@1` →
-  compatible = `xlnx,axi-dma-test-1.00.a`. The 4× DMAs of the new design will
-  need their own DT nodes baked into the bitstream's PL device tree overlay.
-- No `/dev/uio*` and no `libaxidma*` userspace lib installed.
-
-Three viable userspace strategies, in increasing complexity:
-
-| Option | Mechanism | Pro | Contra |
-|---|---|---|---|
-| **A. UIO + mmap** | `uio_pdrv_genirq`; userspace mmaps DMA registers + descriptor BRAM, programs descriptors directly | smallest stack, no out-of-tree code, full control | manual cache-coherency, no scatter-gather helper |
-| **B. Jacob Feder `libaxidma`** | char-dev kernel module (`xilinx_axidma`) + userspace `libaxidma.so` | clean userspace API, supports SG, MIT-licensed, well-trodden in Zynq SDR community | 3rd-party out-of-tree kernel module to track per-kernel-version |
-| **C. Linux DMAengine + `dmabuf`** | upstream `xilinx_dma` (already on board), userspace via `/dev/dma_heap` + ioctl glue | uses in-kernel driver only | requires writing a thin char-dev shim; `/dev/dma_heap` enablement on this kernel not yet verified |
-
-**Decision (Kevin, 2026-05-03):** **Option B locked.** Jacob Feder `libaxidma`
-(<https://github.com/jacobfeder/xilinx_axidma>) wird unter `sw/external/xilinx_axidma/`
-at pinned commit gevendord. Begründung: (a) the board already
-hosts an out-of-tree kernel module workflow, (b) library has the cleanest
-4-channel multi-instance support, (c) MIT license is compatible with our GPL-2.0.
-Vendor in `sw/external/xilinx_axidma/` at a pinned commit; rebuild
-`xilinx_axidma.ko` against the running 5.10 kernel headers per board.
+**Decision (Kevin, 2026-05-03, revised after libaxidma audit):** use the
+**in-tree Vivado/Xilinx stack only** — `axi_dma:7.1` IP + `xilinx_dma.ko` +
+own thin C glue. No `libaxidma`/`xilinx_axidma` 3rd-party vendoring. The
+earlier suggestion to vendor `jacobfeder/xilinx_axidma` was withdrawn after
+that URL turned out to be 404 and the existing tooling already covers the
+stack end-to-end.
 
 ### 5. SW dependencies
 
@@ -193,15 +188,15 @@ Recorded explicitly to avoid re-litigation:
 
 ### 10. Open follow-ups out of this audit
 
-- [x] Pin `libaxidma` strategy (Section 4) — Option B (Jacob Feder vendored), 2026-05-03.
+- [x] Pin `libaxidma` strategy (Section 4) — withdrawn; using in-tree `xilinx_dma.ko` + own thin glue, no 3rd-party vendoring (revised 2026-05-03).
 - [ ] `apt install verilator` on host before Phase 3 co-sim work begins.
 - [ ] `apt install libjansson-dev` on host before first SW build (only runtime
       `libjansson4` is on the host today; headers + `.pc` are missing).
 - [ ] Pin `CC := /usr/bin/arm-linux-gnueabihf-gcc` in the SW Makefile so daily
       builds use Ubuntu 13.3 deterministically, regardless of whether the
       shell has Vitis `settings64.sh` sourced (Section 2 PATH-precedence trap).
-- [ ] Vendor `unity` and `xilinx_axidma` (or chosen alternative) under
-      `sw/external/` at pinned commits; record commit hashes here.
+- [x] Vendor `unity` (`sw/external/unity/v2.6.0`) — done by Agent T0.
+- [ ] Phase-3: confirm board's xilinx_dma char-dev path (`/dev/dma_proxy_*` or equivalent) and finish `sw/dma_io/dma_io.c` real-HW backend behind `HAVE_XILINX_DMA`.
 - [ ] Bake DT nodes for the 4× AXI-DMA instances into the new bitstream's PL
       overlay; current DT only has the single `axidmatest@1` carry-over node.
 - [ ] Decide whether to statically link `libjansson` into `tetra_d` or ship
