@@ -377,7 +377,10 @@ agent A1 deliverable).
 | `0x164` | `REG_TMASAP_TX_FRAMES_CNT` | `[31:0]` | `0` | `tetra_tmasap_tx_framer.v` (A2) | TMAS frames consumed from the PS→FPGA signalling-TX channel and committed to the UMAC DL signal queue. |
 | `0x168` | `REG_TMASAP_TX_ERR_CNT` | `[15:0]` | `0` | `tetra_tmasap_tx_framer.v` (A2) | TX framer drops: bad magic word, frame_len/pdu_len_bits mismatch, or premature tlast. Saturates at `0xFFFF`. |
 | `0x16C` | `REG_TMAR_FRAMES_CNT` | `[31:0]` | `0` | `tetra_tmasap_rx_framer.v` (A2) | TMAR (`0x544D_4152`) report frames emitted on the FPGA→PS signalling-RX channel (shared AXIS-out with TMAS). |
-| `0x170..0x1FF` | reserved (telemetry) | — | `0` | — | reads as 0; allows future per-layer counters without bumping `REG_VERSION`. |
+| `0x170` | `REG_TMDSAP_TX_FRAMES_CNT` | `[31:0]` | `0` | `tetra_tmdsap_tx_framer.v` (A3) | Saturating count of successfully decoded TMDC frames handed off to LMAC TX (PS→FPGA voice path). See `docs/references/tmdsap_port_contract.md`. |
+| `0x174` | `REG_TMDSAP_RX_FRAMES_CNT` | `[31:0]` | `0` | `tetra_tmdsap_rx_framer.v` (A3) | Saturating count of TMDC frames emitted on AXIS-master to A1's S2MM port (FPGA→PS voice path). |
+| `0x178` | `REG_TMDSAP_ERR_CNT` | `[31:0]` | `0` | `tetra_tmdsap_tx_framer.v` (A3) | Saturating count of TMDC framing errors (bad magic, bad length, bad tkeep, premature/missing tlast). |
+| `0x17C..0x1FF` | reserved (telemetry) | — | `0` | — | reads as 0; allows future per-layer counters without bumping `REG_VERSION`. |
 
 ### Test / Scratch region (`0x200..0x2FF`)
 
