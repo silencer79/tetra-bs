@@ -3,6 +3,7 @@
 /build/
 tb/rtl/*/build/
 tb/sw/*/build/
+tb/cosim/build/
 *.o
 *.a
 *.so
@@ -10,6 +11,10 @@ tb/sw/*/build/
 *.bit
 *.bin
 *.bif
+
+# T2 cosim scenario fixtures are committed; counter-exception to *.bin.
+!tb/cosim/scenarios/*.bin
+!tb/cosim/scenarios/expected_dl/*.bin
 
 # Vivado
 *.jou
