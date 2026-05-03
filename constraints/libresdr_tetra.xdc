@@ -167,9 +167,13 @@ set_false_path -to [get_cells -hierarchical -filter {NAME =~ *rst_sync0_sample*}
 # asynchronous. The axi_ad9361 IP handles CDC internally (XPM FIFOs, up_xfer).
 # Tell Vivado not to analyse inter-domain paths — they are not synchronous.
 
-set_clock_groups -asynchronous \
-    -group [get_clocks rx_clk] \
-    -group [get_clocks FCLK_CLK0]
+# -quiet: rx_clk + clk_fpga_0 are both PS7/AD9361-derived; at synth_1 stage
+# the PS7 OOC has not yet generated its clock objects, so without -quiet
+# Vivado emits "No valid object(s) found" CRITICAL_WARNINGs even though the
+# constraint applies correctly at impl_1. Functional impact: none.
+set_clock_groups -quiet -asynchronous \
+    -group [get_clocks -quiet rx_clk] \
+    -group [get_clocks -quiet clk_fpga_0]
 
 # sync_locked / pll_locked CDC synchronisers (2-FF; may not exist in all builds)
 set_false_path -quiet -to [get_cells -hierarchical -filter {NAME =~ *sync_locked_r0*}]
