@@ -23,32 +23,32 @@ Three scenarios:
 Entry point: `make cosim SCENARIO=m2_attach` from this directory or the
 repo root.
 
-## Status (2026-05-03) — FALLBACK MODE
+## Status (2026-05-03 evening) — FULL ELAB OK, BRIDGE-TRANSLATOR PENDING
 
-**Phase-3 Decision-Table §D #3** allows T2 to fall back to a
-Verilator-only TB when the shared-memory DMA bridge proves intractable.
-We are taking that fallback for the **first cut** because of two
-concrete blockers:
+Verilator 5.020 is now installed (`apt install verilator` ran), so
+the harness no longer hits the FALLBACK banner. `make cosim SCENARIO=...`
+elaborates `Vtetra_top` end-to-end (with the `axi_dma_v7_1_bhv.v`
+behavioural model standing in for the Xilinx LogiCORE IP), runs the
+verilated FPGA against the Gold-Reference UL fixtures, and produces
+a captured DL byte stream which gets bit-diffed against the expected
+Gold-Reference DL.
 
-1. **Verilator is not installed on the host.** `verilator --version`
-   fails on the audit shell; the package is available
-   (`apt install verilator`, candidate `5.020-1` per
-   `docs/HARDWARE.md` §6) but installing it requires root and the T2
-   work session does not have an interactive sudo channel. CI on a
-   developer host with verilator pre-installed will hit the same
-   fallback path until the real shm-bridge is wired.
-2. **`IF_DMA_API_v1` ↔ FPGA-AXIS wire-format mismatch.** The userspace
-   API (`sw/dma_io/include/tetra/dma_io.h`) frames payload as
-   `MAGIC(4) | LEN_BE(4) | PAYLOAD`, but the FPGA-side TmaSap-RX
-   framer (`rtl/infra/tetra_tmasap_rx_framer.v`) emits a 36-byte
-   structured TMAS header (frame_len/pdu_len_bits/ssi/ssi_type/flags/
-   endpoint_id/...) per ARCHITECTURE.md §"TmaSap (Signalling) — Frame
-   format". Bridging the two requires a translator layer in either
-   the verilator main loop or the shm bridge — that work is not
-   structurally hard but expanded the T2 scope past its 3-hour budget
-   when combined with futex sync and the verilator install gap.
-   Decision §D #3 explicitly says: defer to Phase 4 live A/B if this
-   trips.
+**Current diff results (2026-05-03):** `m2_attach` = **409/432** bit
+diff. The remaining diff is the wire-format gap documented below —
+the FPGA emits its 36-byte structured TMAS header, the diff target
+expects a 432-bit raw on-air DL slice. Both endpoints work; only the
+translator layer between them is missing.
+
+**Single open blocker — wire-format mismatch.** The userspace API
+(`sw/dma_io/include/tetra/dma_io.h`) frames payload as
+`MAGIC(4) | LEN_BE(4) | PAYLOAD`, but the FPGA-side TmaSap-RX
+framer (`rtl/infra/tetra_tmasap_rx_framer.v`) emits a 36-byte
+structured TMAS header (frame_len/pdu_len_bits/ssi/ssi_type/flags/
+endpoint_id/...) per ARCHITECTURE.md §"TmaSap (Signalling) — Frame
+format". Bridging the two requires a translator in either the
+verilator main loop or the shm bridge — see "Re-enabling the full
+path" below. Decision §D #3 explicitly says: deferred to Phase-4
+live A/B is acceptable; we land the translator if Phase-3 needs it.
 
 **What works in fallback mode:**
 

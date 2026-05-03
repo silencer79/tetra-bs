@@ -139,21 +139,33 @@ COSIM_BIN   := $(BUILD_DIR)/verilator_top
 # the C bridge so they all link into one binary.
 .PHONY: _vlt_elaborate _run_full
 
-_vlt_elaborate:
+_vlt_elaborate: $(VLT_OBJ_DIR)/shm_dma_bridge.o
 	@echo "[cosim] elaborating $(RTL_TOP) under verilator"
-	@mkdir -p $(VLT_OBJ_DIR)
 	@$(VERILATOR) --cc --exe --build -O2 \
 	    -DTETRA_TOP_NO_PHY \
 	    --top-module tetra_top \
 	    --Mdir $(VLT_OBJ_DIR) \
-	    -CFLAGS "$(CFLAGS) $(INCLUDE)" \
-	    -LDFLAGS "-lrt -lpthread" \
+	    -CFLAGS "$(CXXFLAGS) $(INCLUDE)" \
+	    -LDFLAGS "-lrt -lpthread $(VLT_OBJ_DIR)/shm_dma_bridge.o" \
 	    -Wno-fatal -Wno-WIDTH -Wno-UNUSED -Wno-UNDRIVEN \
+	    -y $(REPO_ROOT)/rtl \
+	    -y $(REPO_ROOT)/rtl/infra \
+	    -y $(REPO_ROOT)/rtl/infra/cdc \
+	    -y $(REPO_ROOT)/rtl/lmac \
+	    -y $(REPO_ROOT)/rtl/umac \
+	    -y $(REPO_ROOT)/rtl/phy \
+	    -y $(REPO_ROOT)/tb/rtl/models \
 	    $(RTL_TOP) \
+	    $(REPO_ROOT)/tb/rtl/models/axi_dma_v7_1_bhv.v \
 	    $(THIS_DIR)/verilator_top.cpp \
-	    $(THIS_DIR)/shm_dma_bridge.c \
-	    -CFLAGS "-I$(THIS_DIR)/include" \
 	    -o Vtetra_top
+
+# Pre-compile the C bridge separately so we can use C11 without the
+# C++17 compiler tripping on -std=c11. Verilator's own CFLAGS pump goes
+# through g++; mixing C+C++ in one verilator invocation needs this split.
+$(VLT_OBJ_DIR)/shm_dma_bridge.o: $(THIS_DIR)/shm_dma_bridge.c
+	@mkdir -p $(VLT_OBJ_DIR)
+	@$(CC) $(CFLAGS) $(INCLUDE) -fPIC -c $< -o $@
 	@echo "[cosim] verilator build done -> $(VLT_TOP_BIN)"
 
 # Run the elaborated binary against the scenario fixture. 60 s wall-clock
