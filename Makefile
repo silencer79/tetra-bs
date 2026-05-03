@@ -94,8 +94,12 @@ ARM_DAEMON_INC := \
 # jansson is somewhere else, e.g.
 #   make sw-build ARM_JANSSON_CFLAGS=-I/opt/sysroot/include \
 #                 ARM_JANSSON_LIBS="-L/opt/sysroot/lib -ljansson"
-ARM_JANSSON_CFLAGS ?=
-ARM_JANSSON_LIBS   ?= -ljansson
+# Default points at the auto-built static archive (see jansson-arm
+# target). Override on the command line to use a system multiarch
+# install instead.
+JANSSON_ARM_DIR    ?= $(BUILD_DIR)/jansson-arm/install
+ARM_JANSSON_CFLAGS ?= -I$(JANSSON_ARM_DIR)/include
+ARM_JANSSON_LIBS   ?= $(JANSSON_ARM_DIR)/lib/libjansson.a
 
 ARM_DAEMON_BIN := $(BUILD_ARM)/tetra_d
 
@@ -173,11 +177,21 @@ _check_sw_dirs:
 # still proves the toolchain works and `make sw-build` exits OK with a
 # warning. CI on the board image has jansson available and gets the
 # real binary.
-sw-build: $(ARM_SMOKE_BIN)
+sw-build: $(ARM_SMOKE_BIN) jansson-arm
 	@echo "[sw-build] canary: $(ARM_SMOKE_BIN)"
 	@file $(ARM_SMOKE_BIN) || true
 	@$(MAKE) --no-print-directory $(ARM_DAEMON_BIN) 2>/dev/null || \
 	    echo "[sw-build] note: tetra_d link skipped (cross-jansson missing?)"
+
+# ---- jansson-arm — static cross-build (idempotent) ------------------------
+# Builds libjansson.a for ARM hard-float so the daemon can statically
+# link without requiring multiarch on the dev host or libjansson4 on the
+# board. Re-run is a no-op if the archive already exists.
+.PHONY: jansson-arm
+jansson-arm: $(JANSSON_ARM_DIR)/lib/libjansson.a
+
+$(JANSSON_ARM_DIR)/lib/libjansson.a: $(REPO_ROOT)/scripts/build/build-jansson-arm.sh
+	@$(REPO_ROOT)/scripts/build/build-jansson-arm.sh
 
 $(BUILD_ARM):
 	@mkdir -p $@
