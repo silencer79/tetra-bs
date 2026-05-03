@@ -65,6 +65,26 @@ typedef struct {
 typedef uint32_t EndpointId;
 
 /* ---------------------------------------------------------------------------
+ * ReqHandle — per-request opaque handle for TmaSap/TmdSap.
+ *
+ * Bluestation declares `req_handle: Todo` in the SAP request structs
+ * (`tma::TmaUnitdataReq.req_handle`, `tma::TmaCancelReq.req_handle`,
+ * `tma::TmaReportInd.req_handle`). Pinned for our daemon as **u32 monotonic
+ * counter, allocated by req_handle_next() at SAP-request-emit time** —
+ * wraps after ~4.3B requests (≈years at 100 req/s). No on-air bit-relevance;
+ * pure SAP-internal correlator between request and TmaReportInd.
+ * Reserved value 0 = "no handle / not requested" (callers that don't need
+ * a report skip the counter).
+ *
+ * Closes gold_field_values.md TmaSap §"req_handle" PROVISIONAL note.
+ * ------------------------------------------------------------------------- */
+typedef uint32_t ReqHandle;
+#define REQ_HANDLE_NONE ((ReqHandle) 0u)
+
+/* req_handle_next — monotonic allocator. Skips REQ_HANDLE_NONE on wrap. */
+ReqHandle req_handle_next(void);
+
+/* ---------------------------------------------------------------------------
  * TdmaTime — TETRA TDMA frame coordinate (Clause 7.6 + bluestation
  * tetra-core/src/tdma_time.rs).
  *

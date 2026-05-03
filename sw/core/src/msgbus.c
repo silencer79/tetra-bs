@@ -217,3 +217,20 @@ size_t msgbus_pending(const MsgBus *bus)
     }
     return total;
 }
+
+/* ---------------------------------------------------------------------------
+ * req_handle_next — monotonic u32 SAP-request handle allocator.
+ *
+ * Single-threaded daemon: one process-wide counter, no lock needed. Skips
+ * REQ_HANDLE_NONE (0) on wrap so the reserved value never collides with a
+ * live request. ~4.3B sequential allocations before wrap.
+ * ------------------------------------------------------------------------- */
+ReqHandle req_handle_next(void)
+{
+    static ReqHandle counter = 0u;
+    ReqHandle h = ++counter;
+    if (h == REQ_HANDLE_NONE) {
+        h = ++counter;  /* skip 0 on 32-bit wrap */
+    }
+    return h;
+}

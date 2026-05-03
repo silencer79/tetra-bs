@@ -114,7 +114,7 @@ Bit-Positionen aus `reference_demand_reassembly_bitexact.md` Z.74-113.
 | `cipher_control` | `bool` | 1 | **`false`** (=0) | UL#0 alle | Gold-Cell ist Klartext |
 | `ciphering_parameters` | `Option<u64>` (10 bit, conditional auf cipher_control) | 0 (absent) | **`None`** | n/a | folgt aus `cipher_control=false` |
 | `class_of_ms` | `Option<ClassOfMs>` (24 bit) | 24 (when present) | **`Some(0x1A0F60)`** ≡ `ClassOfMs{voice=1, e2e_encryption_not_supported=1, tetra_packet_data=1, minimum_mode=1, carrier_specific_signalling=1, authentication=1, sck_encryption=1, air_interface_version=3, alle anderen=0}` | UL#0+UL#1 reassembled, 6× konsistent | `reference_gold_full_attach_timeline.md` Z.76 ("class_of_ms=0x1A0F60"), bit-decode siehe ClassOfMs in `mm/fields/class_of_ms.rs` |
-| `energy_saving_mode` | `Option<EnergySavingMode>` (3 bit) | 3 (when present) | **`Some(StayAlive)`** (=0) für 5/6 Attaches; 1 Attach hatte `Eg1` (=1) — **Default für unsere Encoder = `StayAlive`** | UL#0 alle, ESM=1 in Frag1 | `reference_gold_full_attach_timeline.md` Z.76 ("ESM=1" — der "1" ist hier das Presence-Flag, nicht der Wert; tatsächlicher Modus aus 3-bit Slice) — siehe Bemerkung unten |
+| `energy_saving_mode` | `Option<EnergySavingMode>` (3 bit) | 3 (when present) | **`Some(EnergyEconomy1)`** (=1) — bit-decodiert aus Gold UL#0+UL#1 Reassembly 2026-05-03 (`mm_body[32..34]` = `001` = 1 = `EnergyEconomy1` per ETSI EN 300 392-2 §16.10.5) | Gold UL#0 alle 6 Attach-Versuche | decode_dl/ul-Lauf 2026-05-03 |
 | `la_information` | `Option<u64>` (14 bit + 1 trailing zero) | 15 | **`None`** (kein la_information in M2-Attach Frag1+2) | n/a | bluestation Test-Vector + Gold-Body 129 bit fasst keinen LA-Block ein |
 | `ssi` | `Option<u64>` (24 bit) | 24 (when present) | **`None`** (MS-ISSI sitzt im MAC-ACCESS-Header, nicht im MM-Body Type-2) | UL#0 SSI=0x282FF4 ist MAC-Header, kein MM-Body-Feld | `reference_gold_attach_bitexact.md` "MAC-ACCESS Header [5..28] ISSI" |
 | `address_extension` | `Option<u64>` (24 bit) | 24 (when present) | **`None`** | n/a | n/a (no AE in single-network attach) |
@@ -125,13 +125,12 @@ Bit-Positionen aus `reference_demand_reassembly_bitexact.md` Z.74-113.
 | `proprietary` | `Option<Type3FieldGeneric>` | 3 | **`None`** | UL alle | bluestation-Default |
 | `optional_field_value` (TODO-A scope: pseudonym for o-bit at body[5]) | implicit Type-2/3-Trigger | 1 | **1** (presence of class_of_ms + GILD ⇒ o-bit must be set) | UL alle | folgt aus class_of_ms.is_some() per `to_bitbuf` |
 
-**Notiz zu `energy_saving_mode`:** Die zitierte Stelle in
-`reference_gold_full_attach_timeline.md` Z.76 ("ESM=1") meint das
-**Presence-Flag** (= p_energy_saving_mode), nicht den 3-bit-Wert. Der
-3-bit-Wert wurde nicht separat aus dem Frag1-Body extrahiert — pro
-ETSI-Default und MS-Verhalten ist `StayAlive` (=0) zu erwarten, aber das
-ist eine **Open uncertainty** (siehe unten), bis der UL-Reassembly-Decoder
-den exakten 3-bit-Slice ausgibt.
+**Notiz zu `energy_saving_mode`:** Bit-decodiert 2026-05-03 aus Gold
+UL#0+UL#1 Reassembly: `mm_body[32..34] = 001` = **`EnergyEconomy1`**
+(ETSI §16.10.5 Wert 1, kein StayAlive). MTP3550 sendet diesen Modus
+beim ITSI-Attach. `reference_gold_full_attach_timeline.md` Z.76 zitiert
+"ESM=1" — die `1` ist das **Presence-Flag** (das auch =1 ist), aber der
+3-bit-Wert ist auch =1 (Zufall).
 
 ---
 
@@ -528,12 +527,10 @@ eine **explizite Kevin-Entscheidung** vor bit-genauer Encoder-Implementation:
    den korrekten 24 SSI-Bits). Die Konstante ist NICHT verbindlich;
    maßgeblich ist der Decoder-Dump oben.
 
-3. **U-LOC-UPDATE-DEMAND `energy_saving_mode` (3-bit Wert).** Memo
-   `reference_gold_full_attach_timeline.md` Z.76 zitiert "ESM=1" ist das
-   Presence-Flag, nicht der 3-bit-Wert. Der 3-bit-Slice wurde nicht
-   separat dokumentiert. **Action:** UL-Reassembly Decoder erweitern um
-   den `energy_saving_mode`-Slice aus den 6× Gold-Attaches zu extrahieren.
-   Default-Annahme `StayAlive=0` ist plausibel aber unbestätigt.
+3. **U-LOC-UPDATE-DEMAND `energy_saving_mode` (3-bit Wert) — RESOLVED 2026-05-03.**
+   Bit-decodiert aus Gold UL#0+UL#1 Reassembly: `mm_body[32..34]` = `001`
+   = `EnergyEconomy1` (ETSI EN 300 392-2 §16.10.5). Der 3-bit-Wert ist
+   `1`, nicht `StayAlive=0` wie ursprünglich angenommen.
 
 4. **CmceChanAllocReq Felder `timeslots`/`alloc_type`/`ul_dl_assigned`
    (alle non-Todo aber per TODO-A scope).** Erfordern einen erfolgreichen
