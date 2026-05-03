@@ -19,7 +19,15 @@ set REPO_ROOT   [file normalize [file dirname [file dirname [file dirname [info 
 set BUILD_DIR   "$REPO_ROOT/build/vivado"
 set REPORT_DIR  "$BUILD_DIR/reports"
 set PART        "xc7z020clg400-1"
-set TOP_MODULE  "tetra_synth_top"
+
+# Phase 3.6 (2026-05-03): synthesis top is the BD-generated wrapper. The
+# wrapper is created by `scripts/build/create_bd.tcl` (sourced below)
+# which builds a real PS7-backed system around `tetra_top`. The previous
+# stub wrapper `rtl/tetra_synth_top.v` is no longer added to the
+# fileset; it remains in the tree for reference only.
+set BD_NAME     "tetra_system"
+set BD_TOP      "${BD_NAME}_wrapper"
+set TOP_MODULE  $BD_TOP
 
 puts "============================================================"
 puts " tetra-bs Vivado synth"
@@ -108,6 +116,7 @@ catch { create_ip_run [get_ips axi_dma_v71_logicore] }
 # belt-and-braces guard against future refactors.
 set RTL_FILES [list]
 foreach f [glob -nocomplain "$REPO_ROOT/rtl/*.v" \
+                            "$REPO_ROOT/rtl/_bd/*.v" \
                             "$REPO_ROOT/rtl/infra/*.v" \
                             "$REPO_ROOT/rtl/infra/ip/*.v" \
                             "$REPO_ROOT/rtl/infra/cdc/*.v" \
@@ -117,6 +126,12 @@ foreach f [glob -nocomplain "$REPO_ROOT/rtl/*.v" \
     if {[string first "/_retired/" $f] >= 0} { continue }
     if {[string first "/tb/"        $f] >= 0} { continue }
     if {[string first "_bhv.v"      $f] >= 0} { continue }
+    # Phase 3.6: tetra_synth_top.v is superseded by the BD-generated
+    # wrapper (`tetra_system_wrapper`). Keep the file on disk for
+    # archival reference but do NOT add it to the synth fileset —
+    # otherwise its top-level LVDS port-list would clash with the
+    # BD wrapper's identical port names.
+    if {[string match "*/rtl/tetra_synth_top.v" $f]} { continue }
     lappend RTL_FILES $f
 }
 puts "\[synth\] adding [llength $RTL_FILES] RTL files"
@@ -131,7 +146,29 @@ if {[file exists $XDC]} {
     puts "\[synth\] WARNING: $XDC not found — synth will run but P&R will lack pinout"
 }
 
-set_property top $TOP_MODULE [current_fileset]
+update_compile_order -fileset sources_1
+
+# ---- Block Design (Phase 3.6) --------------------------------------------
+# Build `tetra_system.bd` (PS7 + axi_interconnect + completer adapters
+# + tetra_top + xlconcat + proc_sys_reset) and generate its HDL wrapper
+# `tetra_system_wrapper`. The wrapper is then set as the synth top.
+#
+# Re-run handling: if the BD already exists in the project (re-opened
+# .xpr), skip the create step. To force re-create, delete
+# `$BUILD_DIR/$PROJ_NAME.srcs/sources_1/bd/$BD_NAME/` and re-run.
+set BD_DIR "$BUILD_DIR/${PROJ_NAME}.srcs/sources_1/bd/${BD_NAME}"
+if {[file exists "$BD_DIR/${BD_NAME}.bd"]} {
+    puts "\[synth\] BD already present at $BD_DIR — skipping create_bd.tcl"
+    set bd_existing [get_files "${BD_NAME}.bd"]
+    if {[llength $bd_existing] == 0} {
+        # BD on disk but not in the project — re-add.
+        add_files -norecurse "$BD_DIR/${BD_NAME}.bd"
+    }
+    set_property top $BD_TOP [current_fileset]
+} else {
+    puts "\[synth\] sourcing scripts/build/create_bd.tcl"
+    source "$REPO_ROOT/scripts/build/create_bd.tcl"
+}
 update_compile_order -fileset sources_1
 
 # ---- Synthesis ------------------------------------------------------------
