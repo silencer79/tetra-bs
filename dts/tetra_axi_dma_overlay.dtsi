@@ -1,0 +1,169 @@
+// dts/tetra_axi_dma_overlay.dtsi
+//
+// Owned by Agent A1 (A1-fpga-axi-dma).
+//
+// Device-tree overlay for the 4× Xilinx LogiCORE `axi_dma_v7_1` instances
+// instantiated by `rtl/infra/tetra_axi_dma_wrapper.v`. This snippet is
+// designed to be #included into the PL device-tree fragment generated
+// by Vivado's `device-tree-xlnx` flow at bitstream package-time.
+//
+// Channel-label scheme (locked, ARCHITECTURE.md §FPGA↔SW Boundary):
+//
+//   tma-sap-rx   FPGA→PS S2MM channel for TmaSap signalling RX.
+//                Carries TMAS frames (assembled MAC-RESOURCE PDUs from
+//                UMAC) and TMAR frames (UMAC-emitted status reports).
+//                AXIS slave port s_axis_tma_rx_* on the wrapper.
+//
+//   tma-sap-tx   PS→FPGA MM2S channel for TmaSap signalling TX.
+//                Carries TMAS frames from the daemon to the DL builder.
+//                AXIS master port m_axis_tma_tx_* on the wrapper.
+//
+//   tmd-sap-rx   FPGA→PS S2MM channel for TmdSap voice (TCH/S ACELP) RX.
+//                Carries TMDC frames per timeslot.
+//                AXIS slave port s_axis_tmd_rx_* on the wrapper.
+//
+//   tmd-sap-tx   PS→FPGA MM2S channel for TmdSap voice (TCH/S ACELP) TX.
+//                Carries TMDC frames per timeslot.
+//                AXIS master port m_axis_tmd_tx_* on the wrapper.
+//
+// Userspace (libaxidma — see docs/HARDWARE.md §4): the daemon
+// `tetra_d` opens each channel by its `dma-name` property below; the
+// kernel module `xilinx_axidma.ko` exposes them as
+// `/dev/dma-axidma-<dma-name>`. This is the locked naming for S1 (the
+// SW-side DMA glue agent).
+//
+// Memory-map placement (target Zynq-7020, see docs/HARDWARE.md §1):
+//
+//   Each `axi_dma_v7_1` IP has a 64 KiB AXI-Lite register window.
+//   The 4 windows live at consecutive 64-KiB boundaries starting at
+//   PL base 0x4040_0000 (chosen to sit just above the 0x4000_0000
+//   global register window owned by Agent A5; 0x4040_0000 leaves
+//   3 MiB of headroom).
+//
+//     tma-sap-rx   0x4040_0000 + 64 KiB
+//     tma-sap-tx   0x4041_0000 + 64 KiB
+//     tmd-sap-rx   0x4042_0000 + 64 KiB
+//     tmd-sap-tx   0x4043_0000 + 64 KiB
+//
+// IRQ assignment (PS GIC, off-by-32 SPI numbering per Zynq TRM):
+//
+//     tma-sap-rx   GIC_SPI 29 (= 0..3 of the PL-IRQ-IN bus 0)
+//     tma-sap-tx   GIC_SPI 30
+//     tmd-sap-rx   GIC_SPI 31
+//     tmd-sap-tx   GIC_SPI 32
+//
+// (These map to the 4 IRQ outputs irq_tma_rx_o, irq_tma_tx_o,
+//  irq_tmd_rx_o, irq_tmd_tx_o of the wrapper, routed through the PS
+//  IRQ_F2P[3:0] slice. The exact GIC IDs above must match the
+//  `libresdr_tetra.xdc` constraint update done by Agent A5; if A5
+//  picks different SPI numbers, this dtsi follows.)
+//
+// Compatible string: `xlnx,axi-dma-1.00.a` (locked, matches the existing
+// `xilinx_axidma.ko` modinfo per HARDWARE.md §4 probe).
+
+/ {
+    fragment@axidma {
+        target-path = "/amba/fpga-axi@0";
+
+        __overlay__ {
+            #address-cells = <0x1>;
+            #size-cells    = <0x1>;
+
+            // -----------------------------------------------------------
+            // tma-sap-rx (S2MM, FPGA→PS, signalling)
+            // -----------------------------------------------------------
+            tma_sap_rx: dma@40400000 {
+                compatible        = "xlnx,axi-dma-1.00.a";
+                reg               = <0x40400000 0x10000>;
+                #dma-cells        = <0x1>;
+                clock-names       = "s_axi_lite_aclk", "m_axi_s2mm_aclk";
+                clocks            = <&clkc 15>, <&clkc 15>;
+                interrupt-parent  = <&intc>;
+                interrupts        = <0x0 29 0x4>;   /* SPI 29, level-high */
+                xlnx,addrwidth    = <0x20>;
+                xlnx,include-sg;
+                /*
+                 * S2MM-only IP: scatter-gather + write to DDR.
+                 * For libaxidma userspace label.
+                 */
+                dma-name          = "tma-sap-rx";
+
+                dma-channel@40400030 {
+                    compatible          = "xlnx,axi-dma-s2mm-channel";
+                    interrupts          = <0x0 29 0x4>;
+                    xlnx,datawidth      = <0x20>;
+                    xlnx,device-id      = <0x0>;
+                };
+            };
+
+            // -----------------------------------------------------------
+            // tma-sap-tx (MM2S, PS→FPGA, signalling)
+            // -----------------------------------------------------------
+            tma_sap_tx: dma@40410000 {
+                compatible        = "xlnx,axi-dma-1.00.a";
+                reg               = <0x40410000 0x10000>;
+                #dma-cells        = <0x1>;
+                clock-names       = "s_axi_lite_aclk", "m_axi_mm2s_aclk";
+                clocks            = <&clkc 15>, <&clkc 15>;
+                interrupt-parent  = <&intc>;
+                interrupts        = <0x0 30 0x4>;
+                xlnx,addrwidth    = <0x20>;
+                xlnx,include-sg;
+                dma-name          = "tma-sap-tx";
+
+                dma-channel@40410000 {
+                    compatible          = "xlnx,axi-dma-mm2s-channel";
+                    interrupts          = <0x0 30 0x4>;
+                    xlnx,datawidth      = <0x20>;
+                    xlnx,device-id      = <0x1>;
+                };
+            };
+
+            // -----------------------------------------------------------
+            // tmd-sap-rx (S2MM, FPGA→PS, voice)
+            // -----------------------------------------------------------
+            tmd_sap_rx: dma@40420000 {
+                compatible        = "xlnx,axi-dma-1.00.a";
+                reg               = <0x40420000 0x10000>;
+                #dma-cells        = <0x1>;
+                clock-names       = "s_axi_lite_aclk", "m_axi_s2mm_aclk";
+                clocks            = <&clkc 15>, <&clkc 15>;
+                interrupt-parent  = <&intc>;
+                interrupts        = <0x0 31 0x4>;
+                xlnx,addrwidth    = <0x20>;
+                xlnx,include-sg;
+                dma-name          = "tmd-sap-rx";
+
+                dma-channel@40420030 {
+                    compatible          = "xlnx,axi-dma-s2mm-channel";
+                    interrupts          = <0x0 31 0x4>;
+                    xlnx,datawidth      = <0x20>;
+                    xlnx,device-id      = <0x2>;
+                };
+            };
+
+            // -----------------------------------------------------------
+            // tmd-sap-tx (MM2S, PS→FPGA, voice)
+            // -----------------------------------------------------------
+            tmd_sap_tx: dma@40430000 {
+                compatible        = "xlnx,axi-dma-1.00.a";
+                reg               = <0x40430000 0x10000>;
+                #dma-cells        = <0x1>;
+                clock-names       = "s_axi_lite_aclk", "m_axi_mm2s_aclk";
+                clocks            = <&clkc 15>, <&clkc 15>;
+                interrupt-parent  = <&intc>;
+                interrupts        = <0x0 32 0x4>;
+                xlnx,addrwidth    = <0x20>;
+                xlnx,include-sg;
+                dma-name          = "tmd-sap-tx";
+
+                dma-channel@40430000 {
+                    compatible          = "xlnx,axi-dma-mm2s-channel";
+                    interrupts          = <0x0 32 0x4>;
+                    xlnx,datawidth      = <0x20>;
+                    xlnx,device-id      = <0x3>;
+                };
+            };
+        };
+    };
+};
