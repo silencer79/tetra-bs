@@ -1,5 +1,8 @@
-# Build artifacts
-build/
+# Build artifacts — top-level + per-block TB build dirs.
+# (scripts/build/ is intentionally NOT ignored: it ships setup-host.sh.)
+/build/
+tb/rtl/*/build/
+tb/sw/*/build/
 *.o
 *.a
 *.so
