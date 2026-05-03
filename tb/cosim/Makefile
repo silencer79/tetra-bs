@@ -143,6 +143,7 @@ _vlt_elaborate: $(VLT_OBJ_DIR)/shm_dma_bridge.o
 	@echo "[cosim] elaborating $(RTL_TOP) under verilator"
 	@$(VERILATOR) --cc --exe --build -O2 \
 	    -DTETRA_TOP_NO_PHY \
+	    -DCOSIM_TBINJECT \
 	    --top-module tetra_top \
 	    --Mdir $(VLT_OBJ_DIR) \
 	    -CFLAGS "$(CXXFLAGS) $(INCLUDE)" \
