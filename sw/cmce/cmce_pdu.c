@@ -531,19 +531,37 @@ int cmce_pdu_encode_d_nwrk_broadcast(BitBuffer *out, const CmcePdu *pdu)
 {
     if (out == NULL || pdu == NULL) return -EINVAL;
     if (pdu->nwrk_cell_load_ca > 0x3u) return -EINVAL;
-
-    /* Conservative default — refuse to emit guessed optional bits. The
-     * open uncertainty in gold_field_values.md §"Open uncertainties" #2
-     * means we do not know the TNT bit-allocation in Gold #423. Hard-stop
-     * if the caller asks for optionals_present=true. */
-    if (pdu->optionals_present) {
-        return -ENOTSUP;
-    }
+    if (pdu->nwrk_num_ca_neighbour_cells > 0x7u) return -EINVAL;
 
     const size_t start = bb_pos_bits(out);
     bb_put_bits(out, (uint32_t) pdu->nwrk_cell_re_select_parameters, 16);
     bb_put_bits(out, (uint32_t) pdu->nwrk_cell_load_ca & 0x3u,        2);
-    bb_put_bits(out, 0u,                                              1);  /* o-bit = 0 */
+    bb_put_bits(out, (uint32_t) (pdu->optionals_present ? 1u : 0u),   1);  /* o-bit */
+
+    if (pdu->optionals_present) {
+        /* Type-2 tetra_network_time (48 bit, ETSI EN 300 392-2 §18.5.24
+         * Table 18.100). p-bit precedes the 48-bit payload. */
+        bb_put_bits(out, (uint32_t) (pdu->nwrk_p_tetra_network_time ? 1u : 0u), 1);
+        if (pdu->nwrk_p_tetra_network_time) {
+            /* 48 bits don't fit in one bb_put_bits(_,32). Split MSB-first. */
+            const uint32_t hi = (uint32_t) ((pdu->nwrk_tetra_network_time >> 24) & 0xFFFFFFu);
+            const uint32_t lo = (uint32_t) ( pdu->nwrk_tetra_network_time        & 0xFFFFFFu);
+            bb_put_bits(out, hi, 24);
+            bb_put_bits(out, lo, 24);
+        }
+        /* Type-2 number_of_ca_neighbour_cells (3 bit). */
+        bb_put_bits(out, (uint32_t) (pdu->nwrk_p_num_ca_neighbour_cells ? 1u : 0u), 1);
+        if (pdu->nwrk_p_num_ca_neighbour_cells) {
+            bb_put_bits(out, (uint32_t) pdu->nwrk_num_ca_neighbour_cells & 0x7u, 3);
+            /* neighbour_cell_information_for_ca conditional on count > 0
+             * is bluestation `unimplemented!()` and Gold #423's count field
+             * extends past the 124-bit decoder dump — leave unsupported
+             * for now; refuse if caller demands count>0 without inline data. */
+            if (pdu->nwrk_num_ca_neighbour_cells > 0u) {
+                return -ENOTSUP;
+            }
+        }
+    }
     return (int) (bb_pos_bits(out) - start);
 }
 
@@ -556,9 +574,29 @@ int cmce_pdu_decode_d_nwrk_broadcast(BitBuffer *in, CmcePdu *out,
     /* Do NOT memset — the NWRK decoder is composable with a calling-side
      * header decoder that may have already filled in pdu_type. */
     out->pdu_type = CmcePdu_NwrkBroadcast;
+    const size_t start = bb_pos_bits(in);
     out->nwrk_cell_re_select_parameters = (uint16_t) bb_get_bits(in, 16);
     out->nwrk_cell_load_ca              = (uint8_t)  bb_get_bits(in,  2);
     out->optionals_present              = (bb_get_bits(in, 1) != 0);
-    out->encoded_len_bits               = 19;
-    return 19;
+    out->nwrk_p_tetra_network_time      = false;
+    out->nwrk_tetra_network_time        = 0;
+    out->nwrk_p_num_ca_neighbour_cells  = false;
+    out->nwrk_num_ca_neighbour_cells    = 0;
+
+    if (out->optionals_present) {
+        if (in_len_bits < 21u) return -EPROTO;
+        out->nwrk_p_tetra_network_time = (bb_get_bits(in, 1) != 0);
+        if (out->nwrk_p_tetra_network_time) {
+            if (in_len_bits < 21u + 48u) return -EPROTO;
+            const uint64_t hi = (uint64_t) bb_get_bits(in, 24);
+            const uint64_t lo = (uint64_t) bb_get_bits(in, 24);
+            out->nwrk_tetra_network_time = (hi << 24) | lo;
+        }
+        out->nwrk_p_num_ca_neighbour_cells = (bb_get_bits(in, 1) != 0);
+        if (out->nwrk_p_num_ca_neighbour_cells) {
+            out->nwrk_num_ca_neighbour_cells = (uint8_t) bb_get_bits(in, 3);
+        }
+    }
+    out->encoded_len_bits = (uint16_t) (bb_pos_bits(in) - start);
+    return (int) out->encoded_len_bits;
 }

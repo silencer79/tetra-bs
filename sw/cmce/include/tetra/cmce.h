@@ -181,10 +181,18 @@ typedef struct {
     uint8_t        nwrk_cell_load_ca;              /*  2 bit               */
 
     /* Optional-fields presence — encoder/decoder set this when the o-bit
-     * is processed. Conservative-encoder default for D-NWRK-BCAST is
-     * `optionals_present = false` (o-bit = 0), per gold_field_values.md
-     * §"Konservativer Default". */
+     * is processed. For D-NWRK-BCAST: Gold #423 has o-bit=1 (TNT + NCA
+     * present); see gold_field_values.md §"mle/D-NWRK-BROADCAST" for the
+     * full ETSI Table 18.100 TNT layout. */
     bool           optionals_present;      /* 1 bit (the "o-bit")          */
+
+    /* D-NWRK-BCAST optional fields (only valid when optionals_present).
+     * Reset-default values are taken from Gold #423 decode (2026-05-03);
+     * the encoder uses these verbatim unless the caller overrides. */
+    bool           nwrk_p_tetra_network_time;     /* 1 bit p-bit              */
+    uint64_t       nwrk_tetra_network_time;       /* 48 bit per ETSI §18.5.24 */
+    bool           nwrk_p_num_ca_neighbour_cells; /* 1 bit p-bit              */
+    uint8_t        nwrk_num_ca_neighbour_cells;   /* 3 bit count              */
 
     /* Total encoded length in bits — decoder fills this; encoder returns
      * it as the int return value too. */

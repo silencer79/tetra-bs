@@ -235,19 +235,42 @@ static void test_nwrk_bcast_full_124_bit_diff_documented(void)
 }
 
 /* ---------------------------------------------------------------------------
- * Test 3: optionals_present is refused.
+ * Test 3: optionals_present with Gold #423 TNT — encodes the full ETSI
+ * 48-bit TNT layout per gold_field_values.md (uncertainty #2 closed
+ * 2026-05-03). Asserts: 71-bit body (16+2+1+1+48+1+1+0 with NCA=0).
  * ------------------------------------------------------------------------- */
-static void test_nwrk_bcast_optionals_present_refused(void)
+static void test_nwrk_bcast_optionals_with_gold_tnt(void)
 {
     CmcePdu pdu;
     memset(&pdu, 0, sizeof(pdu));
-    pdu.pdu_type           = CmcePdu_NwrkBroadcast;
-    pdu.optionals_present  = true;     /* would require TNT bits */
+    pdu.pdu_type                          = CmcePdu_NwrkBroadcast;
+    pdu.nwrk_cell_re_select_parameters    = 0x5655u;       /* Gold #423 */
+    pdu.nwrk_cell_load_ca                 = 0u;
+    pdu.optionals_present                 = true;
+    pdu.nwrk_p_tetra_network_time         = true;
+    pdu.nwrk_tetra_network_time           = 0x1F9DF90847FFull;  /* Gold #423 */
+    pdu.nwrk_p_num_ca_neighbour_cells     = true;
+    pdu.nwrk_num_ca_neighbour_cells       = 0u;            /* count > 0 unsupported */
 
-    uint8_t   out_buf[8] = {0};
+    uint8_t   out_buf[16] = {0};
     BitBuffer out = bb_init_autoexpand(out_buf, sizeof(out_buf) * 8u);
     int n = cmce_pdu_encode_d_nwrk_broadcast(&out, &pdu);
-    TEST_ASSERT_EQUAL_INT(-ENOTSUP, n);
+    /* 16 cell_re_sel + 2 load_ca + 1 obit + 1 p_tnt + 48 tnt + 1 p_nca + 3 nca = 72 bits */
+    TEST_ASSERT_EQUAL_INT(72, n);
+
+    /* Decode back and confirm round-trip. */
+    BitBuffer in = bb_init(out_buf, (size_t) n);
+    CmcePdu got;
+    memset(&got, 0, sizeof(got));
+    int m = cmce_pdu_decode_d_nwrk_broadcast(&in, &got, (uint16_t) n);
+    TEST_ASSERT_EQUAL_INT(72, m);
+    TEST_ASSERT_EQUAL_HEX16(0x5655, got.nwrk_cell_re_select_parameters);
+    TEST_ASSERT_EQUAL_UINT8(0, got.nwrk_cell_load_ca);
+    TEST_ASSERT_TRUE(got.optionals_present);
+    TEST_ASSERT_TRUE(got.nwrk_p_tetra_network_time);
+    TEST_ASSERT_EQUAL_HEX64(0x1F9DF90847FFull, got.nwrk_tetra_network_time);
+    TEST_ASSERT_TRUE(got.nwrk_p_num_ca_neighbour_cells);
+    TEST_ASSERT_EQUAL_UINT8(0, got.nwrk_num_ca_neighbour_cells);
 }
 
 /* ---------------------------------------------------------------------------
@@ -393,7 +416,7 @@ int main(void)
     UNITY_BEGIN();
     RUN_TEST(test_nwrk_bcast_body_first_19_bits_match_gold);
     RUN_TEST(test_nwrk_bcast_full_124_bit_diff_documented);
-    RUN_TEST(test_nwrk_bcast_optionals_present_refused);
+    RUN_TEST(test_nwrk_bcast_optionals_with_gold_tnt);
     RUN_TEST(test_nwrk_bcast_decode_roundtrip);
     RUN_TEST(test_send_d_nwrk_broadcast_posts_to_bus);
     RUN_TEST(test_nwrk_bcast_tick_period_default);
