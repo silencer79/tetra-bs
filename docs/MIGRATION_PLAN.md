@@ -637,6 +637,43 @@ work — `sw/dma_io/dma_io.c` needs `\`ifdef HAVE_COSIM_SHM` block; UMAC
 reassembly chain has to come online in cosim (currently stubbed under
 `TETRA_TOP_NO_PHY`).
 
+### Phase 3.5 — Hardware bring-up (open blocker before Phase 4) 🔴
+
+Vivado synth pipeline (`make synth` → `scripts/build/synth.tcl`) is wired
+end-to-end and pins the `axi_dma:7.1` IP config (SG=1, S2MM_DRE=1,
+addr_width=32, data_width=32 per channel). The IP gets created OK and
+its OOC synth completes. **`synth_design` then fails** at top-level
+elaboration because `rtl/infra/tetra_axi_dma_wrapper.v` instantiates
+`axi_dma_channel_inst` with a slim port-list + custom parameters
+(`CHANNEL_ID`, `DIR_IS_S2MM`, slim AXIS s/m + slim AXI4-MM r/w +
+`irq_done`/`frame_count`/`overrun_pulse`/`underrun_pulse`) that match
+the simulation behavioural model `tb/rtl/models/axi_dma_v7_1_bhv.v`.
+The real LogiCORE IP exposes the full port-list (S_AXI_LITE control,
+separate SG master, mm2s/s2mm_introut, full burst signals) and accepts
+none of those parameters.
+
+**Open architectural decision required (not autonomous):** add a
+synthesis-only shim `rtl/infra/ip/axi_dma_channel_inst.v` that exposes
+the slim port/param shape externally and internally instantiates the
+real `axi_dma:7.1` IP. Two design choices are roughly equivalent for
+us (4–8h work either way):
+
+- **Shim option A — simple-mode (no SG).** Re-config the IP with
+  `c_include_sg=0`. Shim drives DMACR/DMASR/SA/DA/LENGTH per-transfer
+  via an internal AXI-Lite master, fed from a small descriptor BRAM
+  the shim manages. Pro: no DDR descriptor writes, no SG-engine state
+  machine. Contra: re-program registers per burst, burst-throughput
+  tax.
+- **Shim option B — keep SG-mode, manage descriptors in BRAM.** Shim
+  contains a tiny descriptor manager + ring of N descriptors in BRAM,
+  tied to the IP's M_AXI_SG. Pro: classic Xilinx flow, IRQ-on-completion
+  handles itself. Contra: more state machine, BRAM cost.
+
+Until one is picked + implemented, `make synth` fails fast with the
+exact error logged in `scripts/build/synth.tcl` TODO block + the runme.log
+under `build/vivado/tetra_bs.runs/synth_1/`. **Not a blocker for Phase
+0–3 development**; only gates Phase 4 (live A/B needs a bitstream).
+
 ### Phase 4 — Live A/B on Boards
 
 Board #1: new bitstream + SW. Board #2: sniffer captures Board #1 output and
