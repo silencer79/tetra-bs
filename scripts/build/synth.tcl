@@ -19,7 +19,7 @@ set REPO_ROOT   [file normalize [file dirname [file dirname [file dirname [info 
 set BUILD_DIR   "$REPO_ROOT/build/vivado"
 set REPORT_DIR  "$BUILD_DIR/reports"
 set PART        "xc7z020clg400-1"
-set TOP_MODULE  "tetra_top"
+set TOP_MODULE  "tetra_synth_top"
 
 puts "============================================================"
 puts " tetra-bs Vivado synth"
