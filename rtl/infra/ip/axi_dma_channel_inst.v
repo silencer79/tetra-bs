@@ -216,23 +216,9 @@ module axi_dma_channel_inst #(
         end
     endfunction
 
-    integer ii;
-    always @(posedge clk_axi or negedge rstn_axi) begin
-        if (!rstn_axi) begin
-            init_idx       <= 0;
-            init_done      <= 1'b0;
-            desc_base_addr <= (DIR_IS_S2MM != 0) ? DESC_BASE_S : DESC_BASE_M;
-            for (ii = 0; ii < DESC_RING_DEPTH; ii = ii + 1) begin
-                desc_ring[ii] <= {DESC_BITS{1'b0}};
-            end
-        end else if (!init_done) begin
-            desc_ring[init_idx[RING_PTR_W-1:0]] <= build_desc(init_idx);
-            if (init_idx == DESC_RING_DEPTH - 1) begin
-                init_done <= 1'b1;
-            end
-            init_idx <= init_idx + 1'b1;
-        end
-    end
+    // (init+desc_base_addr+desc_ring driven from a single always block —
+    //  see merged FSM further below; declarations only here so subsequent
+    //  combinational logic can reference them.)
 
     // =================================================================
     // SG-AXI intercept slave (BRAM-backed). Honors AXI4 burst semantics:
@@ -286,8 +272,17 @@ module axi_dma_channel_inst #(
         end
     endfunction
 
+    integer ii;
     always @(posedge clk_axi or negedge rstn_axi) begin
         if (!rstn_axi) begin
+            // ----- init / desc_ring reset -----
+            init_idx       <= 0;
+            init_done      <= 1'b0;
+            desc_base_addr <= (DIR_IS_S2MM != 0) ? DESC_BASE_S : DESC_BASE_M;
+            for (ii = 0; ii < DESC_RING_DEPTH; ii = ii + 1) begin
+                desc_ring[ii] <= {DESC_BITS{1'b0}};
+            end
+            // ----- SG-slave reset -----
             sg_awready_r  <= 1'b0;
             sg_wready_r   <= 1'b0;
             sg_bvalid_r   <= 1'b0;
@@ -309,6 +304,15 @@ module axi_dma_channel_inst #(
             sg_in_read    <= 1'b0;
             sg_aw_match   <= 1'b0;
             sg_ar_match   <= 1'b0;
+        end else if (!init_done) begin
+            // Priming phase: write one descriptor per cycle. SG bus is held
+            // idle (init_done gates it). When all DESC_RING_DEPTH entries
+            // have been written, init_done latches and the SG slave wakes.
+            desc_ring[init_idx[RING_PTR_W-1:0]] <= build_desc(init_idx);
+            if (init_idx == DESC_RING_DEPTH - 1) begin
+                init_done <= 1'b1;
+            end
+            init_idx <= init_idx + 1'b1;
         end else begin
             // ----- AW phase -----
             if (!sg_awready_r && ip_sg_awvalid && !sg_in_write) begin
