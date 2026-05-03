@@ -24,7 +24,11 @@ INC_DIR   := $(WEBUI_DIR)/include
 
 ifeq ($(ARM),1)
 CC      := /usr/bin/arm-linux-gnueabihf-gcc
-CFLAGS  := -std=c11 -O2 -g \
+# -static: dev-host gcc 13.3 links symbols against glibc 2.34/2.38
+# which the board's older glibc lacks. Static-link sidesteps that and
+# keeps each CGI binary self-contained (size cost: ~700 KB per binary,
+# acceptable on /www/cgi-bin/).
+CFLAGS  := -std=c11 -O2 -g -static \
            -march=armv7-a -mfpu=neon-vfpv3 -mfloat-abi=hard \
            -Wall -Wextra -Werror
 OUT_DIR := $(REPO_ROOT)/build/arm/cgi-bin

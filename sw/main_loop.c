@@ -342,8 +342,11 @@ int daemon_request_shutdown(DaemonState *state, bool *out_ast_snapshotted)
 static void ml_listener_accept(DaemonState *st)
 {
     while (1) {
-        int cfd = accept4(st->listener_fd, NULL, NULL,
-                          SOCK_CLOEXEC | SOCK_NONBLOCK);
+        /* Blocking client fd: socket_server_handle_client is synchronous
+         * (read+dispatch+write+close in-line); SOCK_NONBLOCK would race
+         * the client's first send and trigger EAGAIN in read_full which
+         * has no poll path. */
+        int cfd = accept4(st->listener_fd, NULL, NULL, SOCK_CLOEXEC);
         if (cfd < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 break;
