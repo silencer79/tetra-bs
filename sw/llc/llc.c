@@ -131,6 +131,7 @@ static void on_tle_msg_from_mle(const SapMsg *msg, void *ctx)
     TmaUnitdataReq req = {0};
     req.endpoint     = in.endpoint;
     req.addr         = in.addr;
+    req.req_handle   = req_handle_next();
     req.sdu_len_bits = bits;
     if (bits > TMA_SDU_MAX_BYTES * 8u) {
         return;
@@ -395,6 +396,7 @@ int llc_send_bl_data(Llc *llc, EndpointId endpoint, const TetraAddress *addr,
     TmaUnitdataReq req = {0};
     req.endpoint     = endpoint;
     req.addr         = *addr;
+    req.req_handle   = req_handle_next();
     req.sdu_len_bits = bits;
     if (bits > TMA_SDU_MAX_BYTES * 8u) {
         return -E2BIG;
@@ -445,6 +447,7 @@ int llc_send_bl_ack(Llc *llc, EndpointId endpoint, const TetraAddress *addr)
     TmaUnitdataReq req = {0};
     req.endpoint     = endpoint;
     req.addr         = *addr;
+    req.req_handle   = req_handle_next();
     req.sdu_len_bits = bits;
     memcpy(req.sdu_bits, bytes, (bits + 7u) / 8u);
 

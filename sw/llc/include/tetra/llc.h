@@ -237,6 +237,11 @@ typedef struct {
 typedef struct {
     EndpointId   endpoint;
     TetraAddress addr;
+    ReqHandle    req_handle;     /* SAP-internal correlator (tetra/types.h).
+                                  * 0 = REQ_HANDLE_NONE (not requested);
+                                  * else allocated by req_handle_next() at
+                                  * emit-time, returned in the matching
+                                  * TmaReportInd. Closes Phase-3.7 P5. */
     uint16_t     sdu_len_bits;
     uint8_t      sdu_bits[TMA_SDU_MAX_BYTES];
 } TmaUnitdataInd;

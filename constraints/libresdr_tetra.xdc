@@ -237,18 +237,20 @@ set_multicycle_path 1 -hold \
 # --- 2. UL Viterbi-Decoder soft-bit → survivor-state (13 Verletzungen) -------
 # Größte Cluster der Slack-Verletzungen (vit_soft0/1_sys_reg → surv_s8/s11/s13).
 # Symbol-Rate auf SCH/HU ist ~9 kHz (TETRA).  clk_sys ist 100 MHz.  Survivor-
-# State-Update läuft nur 1× pro Demod-Symbol — multicycle 4 (= 40 ns) ist
-# weit konservativer als das physische Update-Intervall.
-set_multicycle_path 4 -setup \
+# State-Update läuft nur 1× pro Demod-Symbol (~9 kHz auf SCH/HU). multicycle
+# 5 (= 50 ns) ist immer noch konservativ ggü. dem 110-µs-Update-Intervall.
+# Phase-3.7 H5: 4→5 Cycles weil unter dem BD-Wrapper die surv_s*_reg-Pfade
+# 0.335 ns mehr Slack brauchen als die Phase-3.5-Annahme.
+set_multicycle_path 5 -setup \
     -from [get_cells -hierarchical -filter {NAME =~ *u_ul_sch_hu/vit_soft0_sys_reg*}] \
     -to   [get_cells -hierarchical -filter {NAME =~ *u_ul_sch_hu/u_viterbi/surv_s*_reg*}]
-set_multicycle_path 3 -hold \
+set_multicycle_path 4 -hold \
     -from [get_cells -hierarchical -filter {NAME =~ *u_ul_sch_hu/vit_soft0_sys_reg*}] \
     -to   [get_cells -hierarchical -filter {NAME =~ *u_ul_sch_hu/u_viterbi/surv_s*_reg*}]
-set_multicycle_path 4 -setup \
+set_multicycle_path 5 -setup \
     -from [get_cells -hierarchical -filter {NAME =~ *u_ul_sch_hu/vit_soft1_sys_reg*}] \
     -to   [get_cells -hierarchical -filter {NAME =~ *u_ul_sch_hu/u_viterbi/surv_s*_reg*}]
-set_multicycle_path 3 -hold \
+set_multicycle_path 4 -hold \
     -from [get_cells -hierarchical -filter {NAME =~ *u_ul_sch_hu/vit_soft1_sys_reg*}] \
     -to   [get_cells -hierarchical -filter {NAME =~ *u_ul_sch_hu/u_viterbi/surv_s*_reg*}]
 
