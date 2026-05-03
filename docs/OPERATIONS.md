@@ -16,6 +16,27 @@ make cosim     # Verilator co-sim FPGA + SW
 make deploy    # Push bitstream + SW to Board #1
 ```
 
+### Build/CI
+
+Top-level Makefile (T0 build-skeleton, 2026-05-03) is the green-CI entry
+point — every Phase-2 agent's PR lands through it. `make help` lists every
+target with one-line descriptions. Default green-CI quartet (also run by
+`.github/workflows/ci.yml` on `ubuntu-24.04`):
+
+- `make tb` — iverilog 12.0 over every per-block dir under `tb/rtl/<block>/`.
+- `make sw-test` — `/usr/bin/gcc` 13.3 + vendored Unity (`sw/external/unity/`,
+  pinned `v2.6.0`) over every `tb/sw/<block>/`.
+- `make sw-build` — `/usr/bin/arm-linux-gnueabihf-gcc` 13.3 cross-compile;
+  full path is mandatory because Vitis 11.2 wraps the same name (HARDWARE.md
+  §2 PATH-precedence trap). Output: `build/arm/`.
+- `make cosim` / `make synth` — stubs, filled by T2 / A5; not in CI.
+
+Bootstrap a clean host with `scripts/build/setup-host.sh` (idempotent;
+installs `verilator`, `libjansson-dev`, `gcc-arm-linux-gnueabihf`, etc.,
+per HARDWARE.md §10 follow-ups, then prints a probed-vs-expected table).
+Per-block TB Makefiles only declare `SRCS` and include the shared
+`tb/{rtl,sw}/Makefile.inc`.
+
 ## Deploy
 
 (TBD. See old project `scripts/deploy.sh` for pattern.)

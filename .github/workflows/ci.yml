@@ -1,0 +1,69 @@
+# .github/workflows/ci.yml — green-CI gate for tetra-bs.
+#
+# Owned by T0 build-skeleton. Every Phase-2 agent's PR must pass this
+# workflow before merge per docs/MIGRATION_PLAN.md §"Sync-Points / merge
+# cadence" sync-point #2.
+#
+# What this runs (per CLAUDE.md "Test-Strategie" 1+2):
+#   - make tb        — RTL TBs via iverilog 12.0
+#   - make sw-test   — host C unit-tests via gcc 13.3, Unity vendored
+#   - make sw-build  — ARM hard-float cross-compile via gcc 13.3
+#                      (NOT Vitis 11.2 — see HARDWARE.md §2 PATH trap)
+#
+# What this does NOT run:
+#   - make synth   — Vivado 2022.2 is Xilinx-EULA, manual install only
+#   - make cosim   — Verilator harness is T2's deliverable, not ready
+#   - Live A/B tests on Boards #1/#2 — that's Phase 4, on lab hardware
+#
+# Runner: ubuntu-24.04 (matches the host audit baseline in HARDWARE.md).
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    name: tb + sw-test + sw-build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: install audited deps (HARDWARE.md §1/§2/§5/§6)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            make \
+            iverilog \
+            verilator \
+            libjansson-dev \
+            gcc-arm-linux-gnueabihf \
+            file \
+            pkg-config
+
+      - name: probe toolchain
+        run: |
+          echo "host gcc:  $(/usr/bin/gcc -dumpfullversion)"
+          echo "arm gcc:   $(/usr/bin/arm-linux-gnueabihf-gcc -dumpfullversion)"
+          echo "iverilog:  $(/usr/bin/iverilog -V | head -1)"
+          echo "verilator: $(verilator --version | head -1)"
+
+      - name: make tb (RTL TBs)
+        run: make tb
+
+      - name: make sw-test (host unit-tests)
+        run: make sw-test
+
+      - name: make sw-build (ARM cross-compile)
+        run: |
+          make sw-build
+          # Sanity: ELF must be ARM hard-float, not host x86-64.
+          file build/arm/tetra_d_smoke
+          file build/arm/tetra_d_smoke | grep -q 'ARM' \
+            || { echo "ERROR: cross-compile output is not ARM"; exit 1; }
