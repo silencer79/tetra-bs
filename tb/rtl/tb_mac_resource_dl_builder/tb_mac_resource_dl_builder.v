@@ -208,6 +208,19 @@ module tb_mac_resource_dl_builder;
         $display("FAIL: tb_mac_resource_dl_builder watchdog");
         $stop;
     end
+
+    // ---- T1: optional VCD dump (compile with -DVCDDUMP to enable) ---------
+`ifdef VCDDUMP
+    initial begin
+`ifdef VCD_FILE
+        $dumpfile(`VCD_FILE);
+`else
+        $dumpfile("dump.vcd");
+`endif
+        $dumpvars(0, tb_mac_resource_dl_builder);
+    end
+`endif
+
 endmodule
 
 `default_nettype wire

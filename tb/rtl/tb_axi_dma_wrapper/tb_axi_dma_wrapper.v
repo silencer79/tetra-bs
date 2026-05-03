@@ -482,6 +482,18 @@ module tb_axi_dma_wrapper;
         $fatal;
     end
 
+    // ---- T1: optional VCD dump (compile with -DVCDDUMP to enable) ---------
+`ifdef VCDDUMP
+    initial begin
+`ifdef VCD_FILE
+        $dumpfile(`VCD_FILE);
+`else
+        $dumpfile("dump.vcd");
+`endif
+        $dumpvars(0, tb_axi_dma_wrapper);
+    end
+`endif
+
 endmodule
 
 `default_nettype wire

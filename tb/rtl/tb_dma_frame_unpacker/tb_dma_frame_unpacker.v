@@ -359,6 +359,18 @@ module tb_dma_frame_unpacker;
         $fatal;
     end
 
+    // ---- T1: optional VCD dump (compile with -DVCDDUMP to enable) ---------
+`ifdef VCDDUMP
+    initial begin
+`ifdef VCD_FILE
+        $dumpfile(`VCD_FILE);
+`else
+        $dumpfile("dump.vcd");
+`endif
+        $dumpvars(0, tb_dma_frame_unpacker);
+    end
+`endif
+
 endmodule
 
 `default_nettype wire

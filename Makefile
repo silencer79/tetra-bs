@@ -51,19 +51,22 @@ SW_TB_DIRS  := $(sort $(dir $(wildcard $(REPO_ROOT)/tb/sw/*/Makefile)))
 ARM_SMOKE_SRC := $(REPO_ROOT)/sw/tetra_d_smoke.c
 ARM_SMOKE_BIN := $(BUILD_ARM)/tetra_d_smoke
 
-.PHONY: help tb sw-test sw-build cosim synth clean \
+.PHONY: help tb tb-list tb-stats sw-test sw-build cosim synth clean \
         _check_rtl_dirs _check_sw_dirs
 
 # ---- help -----------------------------------------------------------------
 help:
 	@echo "tetra-bs build targets:"
-	@echo "  make tb        Run all RTL TBs (iverilog 12.0)."
-	@echo "  make sw-test   Build + run all C host unit-tests (gcc 13.3, Unity)."
-	@echo "  make sw-build  Cross-compile SW for ARM hard-float (gcc 13.3)."
-	@echo "  make cosim     Verilator cosim (T2 stub — not yet implemented)."
-	@echo "  make synth     Vivado 2022.2 synth of rtl/tetra_top.v (A5 stub)."
-	@echo "  make clean     Remove build/ and stray .vvp/.o files."
-	@echo "  make help      Show this list."
+	@echo "  make tb         Run all RTL TBs (iverilog 12.0)."
+	@echo "  make tb VCD=1   Run all RTL TBs with waveform dumps (T1)."
+	@echo "  make tb-list    List discovered RTL TBs + last-run state (T1)."
+	@echo "  make tb-stats   Show per-TB assertion counts + totals (T1)."
+	@echo "  make sw-test    Build + run all C host unit-tests (gcc 13.3, Unity)."
+	@echo "  make sw-build   Cross-compile SW for ARM hard-float (gcc 13.3)."
+	@echo "  make cosim      Verilator cosim (T2 stub — not yet implemented)."
+	@echo "  make synth      Vivado 2022.2 synth of rtl/tetra_top.v (A5 stub)."
+	@echo "  make clean      Remove build/ and stray .vvp/.o files."
+	@echo "  make help       Show this list."
 
 # ---- tb (RTL) -------------------------------------------------------------
 tb: _check_rtl_dirs
@@ -83,6 +86,14 @@ _check_rtl_dirs:
 	@if [ -z "$(RTL_TB_DIRS)" ]; then \
 	    echo "[tb] FAIL — no per-block Makefiles found under tb/rtl/."; exit 1; \
 	fi
+
+# ---- tb-list / tb-stats (T1 RTL-TB aggregator passthroughs) ---------------
+# Forward to tb/rtl/Makefile, which owns discovery + reporting logic.
+tb-list:
+	@$(MAKE) --no-print-directory -C $(REPO_ROOT)/tb/rtl tb-list
+
+tb-stats:
+	@$(MAKE) --no-print-directory -C $(REPO_ROOT)/tb/rtl tb-stats
 
 # ---- sw-test (host) -------------------------------------------------------
 sw-test: _check_sw_dirs
