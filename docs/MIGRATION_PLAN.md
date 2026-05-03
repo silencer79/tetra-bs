@@ -778,6 +778,110 @@ the BD wraps `tetra_top` inside an IPI-generated hierarchy; see
    but emits 16 warnings per BD-create. Fix (cosmetic): bump
    `ID_WIDTH` parameter to 3 on the 4 completer instances.
 
+### Phase 3.7 — Cleanup Backlog (audit 2026-05-03 evening)
+
+Items found by `make synth` end-to-end run + first deploy attempt that
+need to be cleaned up before Phase 4 can run live. Worked top-down.
+
+#### 🔴 Phase-4 blockers — air-test cannot proceed without these
+
+**B1.** `deploy.sh` — **carry-over 1:1 from `tetra/scripts/deploy.sh`**, only
+   minimal tetra-bs adaptation (bitstream name, daemon binary name,
+   CGI list, paths). The previous custom rewrite drifted from the
+   production-validated ritual; revert to known-good base.
+
+**B2.** `axi_ad9361:1.0` IP missing from BD. `scripts/build/create_bd.tcl`
+   only adds PS7 + AXI interconnects + axi_dma. The LVDS-DDR
+   deserialiser is the AD9361's data plane; without it
+   `tetra_top.v:875-877` rx_i_lvds=12'd0 / rx_q_lvds=12'd0 /
+   rx_valid_lvds=1'b0 are tied off. Bitstream loads but RF is dead.
+   Fix: add axi_ad9361 IP per `tetra/scripts/create_bd.tcl:175-206`,
+   wire its parallel ADC/DAC ports to tetra_top, expose LVDS pins to
+   the BD wrapper. Drop `rtl/_bd/tetra_top_bd_facade.v` IBUFDS/OBUFDS
+   (axi_ad9361 has its own SelectIO/IODELAY).
+
+**B3.** `tetra_top.v` parallel ADC/DAC ports do not exist yet — the rx_chain
+   currently expects `rx_i_lvds[11:0]` / `rx_q_lvds[11:0]` /
+   `rx_valid_lvds` from the simplified-tied-off path. After B2 lands,
+   rewire `tetra_rx_chain` and `tetra_tx_chain` to consume real
+   adc_data_i0/q0/adc_valid_i0/q0/adc_enable_i0/q0/adc_r1_mode +
+   produce dac_data_i0/q0/dac_valid_i0/q0/dac_enable_i0/q0.
+
+**B4.** `rtl/tetra_synth_top.v` (Phase 3.5 stub-top) is unused after
+   Phase 3.6 BD wrapper landed. Delete to remove ambiguity which
+   module is the synth top.
+
+#### 🟠 Half-done — works for some path, broken for others
+
+**H1.** WebUI `index.html` only has 3/5 OPERATIONS.md tabs (Live, Profiles,
+   Entities). Missing: Configuration (RF/Cell/Cipher/Scrambler/
+   Training/Slot/AD9361/msgbus), Tools (manual PDU send / reset /
+   bitstream switch / capture / decoder upload), Debug (PDU trace /
+   AACH timeline / slot sched / msgbus tap / reg dump). Backend
+   CGIs+ops all exist, only HTML/JS frontend is stub.
+
+**H2.** `sw/dma_io/dma_io.c` real-HW backend behind `HAVE_XILINX_DMA` is
+   stub-only (`#include <xilinx_dma.h>` placeholder, no actual
+   /dev/dma_proxy or xilinx_dma usage). Pipe-mock works for tests;
+   on Board #1 there is no DMA path.
+
+**H3.** `HAVE_COSIM_SHM` block in dma_io.c never written. shm_dma_bridge.c
+   exists, used only by selftest. Daemon-in-loop cosim deferred.
+
+**H4.** TmdSap LMAC TCH/S port-shape — Agent A3 left
+   `<-- TODO: confirm LMAC TCH/S port shape -->` markers. Voice path
+   stubbed in `rtl/tetra_top.v:948`.
+
+**H5.** Bitstream WNS = -0.335 ns / 12 failing endpoints. Marginal but real.
+   Fix needs 5-cycle multicycle on Viterbi survivor-state paths or
+   logic restructuring.
+
+#### 🟡 Carry-over scripts not validated for tetra-bs
+
+**C1.** `scripts/vcxo_cal.sh` — 1:1 carry-over, DAC=153 hardcoded in
+   deploy.sh. Function with new BD not tested.
+
+**C2.** `scripts/ad9361_init.sh` — 1:1 carry-over, defaults still 429.95 MHz
+   (operator default 428.250 MHz). iio_attr path goes via PS-SPI,
+   should work without axi_ad9361 IP — unverified.
+
+**C3.** `scripts/tetra_ctrl.sh` BASE_ADDR=0x40000000 + Reg-Offsets adapted.
+   `cmd_dac_init`/`cmd_adc_init` carry-over unchanged (correct — they
+   work once axi_ad9361 lands per B2).
+
+#### 🟢 PROVISIONAL — waiting for on-air data
+
+**P1.** All 8 CMCE PDU values (D-SETUP, U-SETUP, D-CALL-PROCEEDING, D-CONNECT,
+   U-TX-DEMAND, D-TX-GRANTED, U/D-RELEASE) are PROVISIONAL — no
+   successful Group-Call capture exists.
+
+**P2.** LLC CRC-32 polynomial `0xEDB88320` round-trip-tested but not verified
+   against on-air FCS-bearing capture. TODO marker in `llc.h`.
+
+**P3.** TNT RTC source in production. `cmce_nwrk_bcast.c` uses static value
+   from Gold #423; no live RTC integration.
+
+**P4.** subscriber_class on-air encoding for D-LOC-UPDATE-ACCEPT — no
+   cell-config hook.
+
+**P5.** `req_handle` monotonic counter implemented (req_handle_next) but
+   no caller wires it — S3/S7 must use it explicitly.
+
+#### 🔵 External-repo bug (other repo)
+
+**E1.** `/home/kevin/claude-ralph/tetra/scripts/gen_d_nwrk_broadcast.py:GOLD_INFO_124`
+   has 8-bit-shift bug. Flagged in `gold_field_values.md` only;
+   not fixed in source repo.
+
+#### ⚪ Cosmetics
+
+**X1.** Static-link size: tetra_d 3.5 MB + 12 CGIs × 470 KB = ~9 MB on
+   board /root/ + /www/cgi-bin/. Bloated but board has 3.3 GB free.
+
+**X2.** TODO markers in code (greppable): see audit list.
+
+---
+
 ### Phase 4 — Live A/B on Boards
 
 Board #1: new bitstream + SW. Board #2: sniffer captures Board #1 output and
