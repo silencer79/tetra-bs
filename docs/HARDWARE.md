@@ -71,18 +71,22 @@ serves all 4 instances):
 | `c_enable_multi_channel` | 0 | |
 | `c_increase_throughput` | 0 | |
 
-**Status (2026-05-03, branch `feat/synth-ip-bringup`):** IP creation works,
-OOC synth of the IP itself completes; top-level `synth_design` of
-`tetra_top` currently FAILS at `tetra_axi_dma_wrapper` elaboration because
-the wrapper's per-channel `axi_dma_channel_inst` instantiation uses a
-slim, custom port-list/parameter shape (`CHANNEL_ID`, `DIR_IS_S2MM`,
-slim AXIS+AXI4-MM only) that matches the simulation behavioural model at
-`tb/rtl/models/axi_dma_v7_1_bhv.v` but NOT the real Xilinx IP's full
-port-list (S_AXI_LITE control slave, full burst signals, separate SG
-master, mm2s/s2mm_introut, etc.). A synthesis-only RTL shim under
-`rtl/infra/ip/axi_dma_channel_inst.v` is required to bridge the two —
-that shim is the natural follow-up to A1 (see TODO in
-`scripts/build/synth.tcl`).
+**Status (2026-05-03, branch `feat/axi-dma-sg-shim`):** wrapper-shape gap
+resolved. The synthesis-only shim `rtl/infra/ip/axi_dma_channel_inst.v`
+exposes the slim port/param shape externally (`CHANNEL_ID`, `DIR_IS_S2MM`,
+slim AXIS + slim AXI4-MM + telemetry pulses — same as the bhv model at
+`tb/rtl/models/axi_dma_v7_1_bhv.v`) and internally instantiates the real
+LogiCORE IP under the renamed name `axi_dma_v71_logicore` (rename via
+`create_ip -module_name`). The shim runs the IP in SG-mode (Option B per
+Kevin 2026-05-03 evening — future-proof for multi-MS group-call scaling)
+with a per-direction descriptor ring of 16 entries × 32 B held in BRAM.
+The IP's M_AXI_SG bus is intercepted locally by a tiny BRAM-backed AXI4
+slave inside the shim — descriptors do NOT round-trip through PS-DDR;
+only the data path (M_AXI_S2MM/MM2S) reaches the slim outward port. An
+inline AXI-Lite master programs CURDESC/DMACR.RS=1/TAILDESC at boot and
+advances TAILDESC on each completion IRQ. `make synth` now produces
+`build/vivado/tetra_bs.bit` end-to-end; phase 3.5 is closed (see
+`MIGRATION_PLAN.md` §"Phase 3.5").
 
 ### 2. ARM cross-compile (target = Zynq-7020, Cortex-A9, ARMv7-A + VFPv3 + NEON)
 
