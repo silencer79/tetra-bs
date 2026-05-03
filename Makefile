@@ -199,10 +199,19 @@ SCENARIO ?= m2_attach
 cosim:
 	@$(MAKE) --no-print-directory -C $(REPO_ROOT)/tb/cosim cosim SCENARIO=$(SCENARIO)
 
-# ---- synth (A5 stub) ------------------------------------------------------
+# ---- synth (Vivado batch via scripts/build/synth.tcl) ---------------------
+# Synthesises rtl/tetra_top.v for LibreSDR (Zynq-7020 xc7z020clg400-1) using
+# Vivado 2022.2. Outputs build/vivado/tetra_bs.bit and tetra_bs.bit.bin (the
+# fpga_manager-loadable form for /lib/firmware/ on Board #1).
 synth:
-	@echo "[synth] A5 will fill this in"
-	@exit 0
+	@command -v vivado >/dev/null || { \
+	  echo "[synth] FAIL - vivado not on PATH"; \
+	  echo "[synth]   source /opt/Xilinx/Vivado/2022.2/settings64.sh first"; \
+	  echo "[synth]   (HARDWARE.md §1)"; exit 1; }
+	@mkdir -p $(BUILD_DIR)
+	@echo "[synth] launching Vivado batch synth via scripts/build/synth.tcl"
+	@cd $(REPO_ROOT) && vivado -mode batch -nojournal -nolog \
+	    -source scripts/build/synth.tcl 2>&1 | tee $(BUILD_DIR)/synth.log
 
 # ---- clean ----------------------------------------------------------------
 clean:
