@@ -33,12 +33,6 @@
 `default_nettype none
 
 module tetra_synth_top (
-    // PL clock + reset (board pins).
-    input  wire        clk_axi,
-    input  wire        rstn_axi,
-    input  wire        clk_sys,
-    input  wire        rstn_sys,
-
     // AD9361 LVDS (matches `constraints/libresdr_tetra.xdc`).
     input  wire        rx_clk_in_p,
     input  wire        rx_clk_in_n,
@@ -156,6 +150,32 @@ module tetra_synth_top (
     assign pl_led1 = tt_pl_led1;
 
     // -----------------------------------------------------------------
+    // Internal clock + reset generation.
+    //
+    // Without external clock pins on this synth-only top (the LibreSDR's
+    // PL clocks are normally driven by the PS via FCLK_CLK0 — provided by
+    // a PS7 IP that is not yet instantiated in this branch, see header
+    // banner), we derive a single fabric clock from the AD9361 LVDS RX
+    // clock pin `rx_clk_in_p/n` (declared LVDS_25 + create_clock 4 ns
+    // in `constraints/libresdr_tetra.xdc`). That clock feeds both
+    // clk_axi and clk_sys in this baseline (the 100 MHz clk_axi vs
+    // ~250 MHz LVDS-clk split is a Phase-4 follow-up; for the
+    // bring-up bitstream they share). rstn comes from a long
+    // power-on-reset shift register.
+    // -----------------------------------------------------------------
+    wire clk_axi, clk_sys;
+    wire rx_clk_se_for_pl;
+    BUFG u_bufg_pl (.I(rx_clk_se_for_pl), .O(clk_axi));
+    assign clk_sys = clk_axi;
+
+    // Power-on-reset: shift register of 16 ones into the rstn nets,
+    // released after 16 clock cycles.
+    reg [15:0] por_sr = 16'h0000;
+    always @(posedge clk_axi) por_sr <= {por_sr[14:0], 1'b1};
+    wire rstn_axi = por_sr[15];
+    wire rstn_sys = rstn_axi;
+
+    // -----------------------------------------------------------------
     // LVDS pin buffers — required by Vivado DRC IOSTDTYPE-1 because the
     // XDC declares the rx_*_p/n + tx_*_p/n pins as LVDS_25 (differential).
     // For the inputs we use IBUFDS to merge the pair into a single net
@@ -173,6 +193,7 @@ module tetra_synth_top (
     wire [5:0] rx_data_in_se;
 
     IBUFDS u_ibufds_rx_clk   (.O(rx_clk_in_se),   .I(rx_clk_in_p),   .IB(rx_clk_in_n));
+    assign rx_clk_se_for_pl = rx_clk_in_se;
     IBUFDS u_ibufds_rx_frame (.O(rx_frame_in_se), .I(rx_frame_in_p), .IB(rx_frame_in_n));
     IBUFDS u_ibufds_rx_d0 (.O(rx_data_in_se[0]), .I(rx_data_in_p[0]), .IB(rx_data_in_n[0]));
     IBUFDS u_ibufds_rx_d1 (.O(rx_data_in_se[1]), .I(rx_data_in_p[1]), .IB(rx_data_in_n[1]));
