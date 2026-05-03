@@ -286,7 +286,11 @@ unless otherwise noted.
 | `0x088` | `REG_RX_GAIN` | `[6:0]` | R/W | `0x20` (32) | AD9361 RX gain (carry-over). |
 | `0x08C` | `REG_TX_ATT` | `[7:0]` | R/W | `0x28` (40) | AD9361 TX attenuator, 0.25 dB units (carry-over). |
 | `0x090` | `REG_IRQ_ENABLE` | `[4:0]` | R/W | `0` | IRQ-enable mask, bit-aligned with `REG_IRQ_STATUS@0x10C`. |
-| `0x094..0x0FB` | reserved (config) | — | R/O | `0` | reads as 0; writes dropped. |
+| `0x0A0` | `REG_DMA_CH_ENABLE`  | `[3:0]` | R/W   | `0` | Per-channel enable, owned by Agent A1 (`tetra_axi_dma_wrapper.v`). `[0]` tma_rx, `[1]` tma_tx, `[2]` tmd_rx, `[3]` tmd_tx. While 0, the corresponding `axi_dma_v7_1` instance is held in reset and ignores all AXIS / AXI-MM activity. |
+| `0x0A4` | `REG_DMA_CH_RESET`   | `[3:0]` | R/W   | `0` | Per-channel write-1-pulse soft reset (1 cycle), self-clearing. Bit positions match `REG_DMA_CH_ENABLE`. Used by daemon to recover from `REG_DMA_OVERRUN_CNT` increments. |
+| `0x0A8` | `REG_DMA_IRQ_ENABLE` | `[3:0]` | R/W   | `0` | Per-channel IRQ-output enable mask. The status is latched regardless of this mask; only the output line `irq_*_o` is gated. |
+| `0x0AC` | `REG_DMA_IRQ_STATUS` | `[3:0]` | R/W1C | `0` | Per-channel sticky completion status. HW-set wins over SW-clear when both happen on the same cycle (matches `REG_IRQ_STATUS@0x10C` semantics). |
+| `0x094..0x09F`, `0x0B0..0x0FB` | reserved (config) | — | R/O | `0` | reads as 0; writes dropped. |
 | `0x0FC` | `REG_VERSION` | `[31:0]` | R/O | `0x0002_0000` | Bitstream version. Bumped from carry-over `0x0001_0000` so SW can distinguish the new register window unambiguously. |
 
 #### SLOT_TABLE window (`0x030..0x07F`)
