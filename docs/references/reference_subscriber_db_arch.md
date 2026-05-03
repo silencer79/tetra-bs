@@ -27,28 +27,34 @@ für schnellen Lookup.
 ```
 
 ### Profile Table (32 bit, 6 Slots)
+
+Layout per `tetra-zynq-phy/sw/tetra_hal.h` REG_PROFILE_DATA:
+
 ```
 [31:24]  max_call_duration  8 (sec, 0=unlimited)
 [23:16]  hangtime           8 (×100ms, max 25.5s)
 [15:12]  priority           4
-[11: 4]  reserved           8
+[11: 9]  gila_class         3 (M2 default = 4)
+[ 8: 7]  gila_lifetime      2 (M2 default = 1)
+[ 6: 4]  reserved3          3 (preserved bit-exact)
 [ 3]     permit_voice       1
 [ 2]     permit_data        1
 [ 1]     permit_reg         1
 [ 0]     valid              1
 ```
 
-Profile 0 = bit-exakt **`0x0000_088F`** (Default für Auto-Enroll, read-only enforced):
+Profile 0 = bit-exakt **`0x0000_088F`** (M2 default, read-only enforced):
 - `max_call_duration` = `0x00` (unlimited)
 - `hangtime` = `0x00`
-- `priority` = `0x0`
-- `reserved` = `0x88` (carry-over invariant; do not zero)
+- `priority` = `0`
+- `gila_class` = `4`
+- `gila_lifetime` = `1`
+- `reserved3` = `0`
 - `permit_voice` = 1, `permit_data` = 1, `permit_reg` = 1, `valid` = 1
 
-Frühere Doku-Glosse "permit_reg=1, alles andere 0" war nicht bit-exakt — die
-in production verwendete Profile-0-Konstante ist `0x0000_088F` und schaltet
-Voice + Data + Reg frei; der `reserved`-Bytewert `0x88` muss bit-exakt bleiben
-(durchgängig in Carry-Over-Memos so geführt).
+⚠ Slot 0 ist M2-Default. `gila_class=4, gila_lifetime=1, permits=1, valid=1`
+NICHT ändern — sonst bricht der MTP3550-Attach (per `tetra-zynq-phy/sw/web/index.html`
+Operator-Warnung).
 
 ### AST (256 bit, 64 Slots)
 ```

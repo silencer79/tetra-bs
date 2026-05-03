@@ -96,7 +96,9 @@ static void test_profile_pack_roundtrip(void)
         .max_call_duration = 0xAB,
         .hangtime          = 0xCD,
         .priority          = 0x0E,
-        .reserved          = 0x5A,
+        .gila_class        = 5,    /* 3 bit */
+        .gila_lifetime     = 2,    /* 2 bit */
+        .reserved3         = 3,    /* 3 bit */
         .permit_voice      = true,
         .permit_data       = false,
         .permit_reg        = true,
@@ -108,7 +110,9 @@ static void test_profile_pack_roundtrip(void)
     TEST_ASSERT_EQUAL_UINT8(p.max_call_duration, q.max_call_duration);
     TEST_ASSERT_EQUAL_UINT8(p.hangtime, q.hangtime);
     TEST_ASSERT_EQUAL_UINT8(p.priority, q.priority);
-    TEST_ASSERT_EQUAL_UINT8(p.reserved, q.reserved);
+    TEST_ASSERT_EQUAL_UINT8(p.gila_class, q.gila_class);
+    TEST_ASSERT_EQUAL_UINT8(p.gila_lifetime, q.gila_lifetime);
+    TEST_ASSERT_EQUAL_UINT8(p.reserved3, q.reserved3);
     TEST_ASSERT_TRUE(q.permit_voice);
     TEST_ASSERT_FALSE(q.permit_data);
     TEST_ASSERT_TRUE(q.permit_reg);
@@ -149,7 +153,9 @@ static void test_save_open_roundtrip(void)
         .max_call_duration = 60,
         .hangtime = 50,
         .priority = 3,
-        .reserved = 0xA5,
+        .gila_class    = 4,    /* M2 default */
+        .gila_lifetime = 1,    /* M2 default */
+        .reserved3     = 0,
         .permit_voice = true,
         .permit_data  = true,
         .permit_reg   = true,
@@ -211,7 +217,9 @@ static void test_profile0_readonly(void)
         .max_call_duration = 1,
         .hangtime = 1,
         .priority = 1,
-        .reserved = 0,
+        .gila_class = 0,
+        .gila_lifetime = 0,
+        .reserved3 = 0,
         .permit_voice = false,
         .permit_data  = false,
         .permit_reg   = false,

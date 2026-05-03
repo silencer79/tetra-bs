@@ -40,21 +40,27 @@
 /* ---------------------------------------------------------------------------
  * Profile (32 bit on the wire / in BRAM).
  *
- * Layout per reference_subscriber_db_arch.md:
+ * Layout per `tetra-zynq-phy/sw/tetra_hal.h` REG_PROFILE_DATA + production
+ * `db.tsv.default` (carry-over):
  *   [31:24] max_call_duration  (sec, 0=unlimited)
  *   [23:16] hangtime           (×100ms, max 25.5s)
  *   [15:12] priority           (4 bits)
- *   [11: 4] reserved           (8 bits — preserved bit-exact for round-trip)
+ *   [11: 9] gila_class         (3 bits, M2 default = 4)
+ *   [ 8: 7] gila_lifetime      (2 bits, M2 default = 1)
+ *   [ 6: 4] reserved3          (3 bits — preserved bit-exact)
  *   [ 3]    permit_voice
  *   [ 2]    permit_data
  *   [ 1]    permit_reg
  *   [ 0]    valid
+ * Slot 0 reset-default = 0x0000_088F (M2 bit-identity guard).
  * ------------------------------------------------------------------------- */
 typedef struct {
     uint8_t max_call_duration;
     uint8_t hangtime;
     uint8_t priority;       /* 0..15 */
-    uint8_t reserved;       /* preserves [11:4] bit-exact */
+    uint8_t gila_class;     /* 0..7  (M2 default = 4) */
+    uint8_t gila_lifetime;  /* 0..3  (M2 default = 1) */
+    uint8_t reserved3;      /* 0..7  (preserved bit-exact) */
     bool    permit_voice;
     bool    permit_data;
     bool    permit_reg;

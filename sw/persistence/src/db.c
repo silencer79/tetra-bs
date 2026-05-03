@@ -54,10 +54,12 @@ uint32_t profile_pack(const Profile *p)
     v |= ((uint32_t) p->max_call_duration & 0xFFu) << 24;
     v |= ((uint32_t) p->hangtime          & 0xFFu) << 16;
     v |= ((uint32_t) p->priority          & 0x0Fu) << 12;
-    v |= ((uint32_t) p->reserved          & 0xFFu) << 4;
-    v |= ((uint32_t) (p->permit_voice ? 1u : 0u))  << 3;
-    v |= ((uint32_t) (p->permit_data  ? 1u : 0u))  << 2;
-    v |= ((uint32_t) (p->permit_reg   ? 1u : 0u))  << 1;
+    v |= ((uint32_t) p->gila_class        & 0x07u) <<  9;
+    v |= ((uint32_t) p->gila_lifetime     & 0x03u) <<  7;
+    v |= ((uint32_t) p->reserved3         & 0x07u) <<  4;
+    v |= ((uint32_t) (p->permit_voice ? 1u : 0u))  <<  3;
+    v |= ((uint32_t) (p->permit_data  ? 1u : 0u))  <<  2;
+    v |= ((uint32_t) (p->permit_reg   ? 1u : 0u))  <<  1;
     v |= ((uint32_t) (p->valid        ? 1u : 0u));
     return v;
 }
@@ -67,7 +69,9 @@ void profile_unpack(uint32_t bits, Profile *out)
     out->max_call_duration = (uint8_t) ((bits >> 24) & 0xFFu);
     out->hangtime          = (uint8_t) ((bits >> 16) & 0xFFu);
     out->priority          = (uint8_t) ((bits >> 12) & 0x0Fu);
-    out->reserved          = (uint8_t) ((bits >>  4) & 0xFFu);
+    out->gila_class        = (uint8_t) ((bits >>  9) & 0x07u);
+    out->gila_lifetime     = (uint8_t) ((bits >>  7) & 0x03u);
+    out->reserved3         = (uint8_t) ((bits >>  4) & 0x07u);
     out->permit_voice      = ((bits >> 3) & 1u) != 0;
     out->permit_data       = ((bits >> 2) & 1u) != 0;
     out->permit_reg        = ((bits >> 1) & 1u) != 0;
