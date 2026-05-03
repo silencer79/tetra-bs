@@ -687,10 +687,93 @@ prunes them before placement. The placed design therefore reports near-
 0 cells. The bitstream is structurally valid (write_bitstream succeeds,
 4 MiB output), but loading it on Board #1 will not exercise the DMA /
 TETRA datapath until the PS7-wiring follow-up restores observability.
-That follow-up is the natural Phase 3.6 task: instantiate a real
-`processing_system7:5.5` IP, wire its M_AXI_GP0 to the wrapper's
-S_AXI_LITE and its S_AXI_HP0/HP1 to the 4× M_AXI masters, route IRQ_F2P
-from the IRQ outputs.
+That follow-up is the natural Phase 3.6 task — closed below.
+
+### Phase 3.6 — PS7 + Block Design wiring ✅
+
+**Closed 2026-05-03 evening (Kevin), branch `feat/ps7-bd-wiring`.**
+Replaces `rtl/tetra_synth_top.v` (always-ready stubs → near-0 placed
+cells) with a Vivado Block Design `tetra_system.bd` that gives the
+4× AXI-MM masters and 1× AXI-Lite slave a real PS-side counterpart.
+
+**Block Design IP set (xc7z020clg400-1):**
+| Cell | VLNV | Role |
+|---|---|---|
+| `sys_ps7` | `xilinx.com:ip:processing_system7:5.5` | FCLK_CLK0=100 MHz, M_AXI_GP0, S_AXI_HP0, IRQ_F2P[3:0] |
+| `sys_rstgen` | `xilinx.com:ip:proc_sys_reset:5.0` | PL reset synchroniser |
+| `axi_ic_ctrl` | `xilinx.com:ip:axi_interconnect:2.1` | M_AXI_GP0 → tetra_top.S_AXI_LITE (1×SI/1×MI) |
+| `axi_ic_hp0` | `xilinx.com:ip:axi_interconnect:2.1` | 4× completer.M_AXI → S_AXI_HP0 (4×SI/1×MI) |
+| `xlconcat_irq` | `xilinx.com:ip:xlconcat:2.1` | 4 IRQs → IRQ_F2P[3:0] |
+| `tetra_top_0` | `tetra_top_bd_facade` (rtl/_bd/) | The DUT, wrapping `tetra_top` to expose `s_axil_*` as `S_AXI_LITE` bus + IBUFDS/OBUFDS for LVDS_25 pins |
+| `completer_*` ×4 | `tetra_axi_mm_completer` (rtl/_bd/) | Slim AXI4-MM → full AXI4-MM (single-beat INCR, AWLEN=0, AWSIZE=2, AWBURST=01, AWCACHE=0011, IDs=0) |
+
+**Source-of-truth files** (commits `7e20763`, `9a1f2a9`):
+- `rtl/_bd/tetra_axi_mm_completer.v` — slim→full AXI4-MM adapter
+- `rtl/_bd/tetra_top_bd_facade.v` — façade with renamed AXI-Lite +
+  inserted IBUFDS/OBUFDS for LVDS_25 DRC compliance
+- `scripts/build/create_bd.tcl` — TCL that builds the BD from scratch
+  (idempotent: skips create when `tetra_system.bd` already on disk)
+- `scripts/build/synth.tcl` — sources `create_bd.tcl` between RTL
+  fileset construction and `synth_design`; sets `tetra_system_wrapper`
+  as the new top; excludes `rtl/tetra_synth_top.v` from the fileset
+
+**Test gate met (`make synth`):** exits 0; produces
+`build/vivado/tetra_bs.bit` (4045680 bytes) + `tetra_bs.bit.bin`.
+
+**Post-impl utilization (xc7z020clg400-1):**
+| Resource | Used | Avail | % |
+|---|---|---|---|
+| Slice LUTs | 16121 | 53200 | **30.30 %** |
+| Slice Registers | 24616 | 106400 | **23.14 %** |
+| BRAM Tile (12× RAMB36) | 12 | 140 | **8.57 %** |
+| DSP48E1 | 4 | 220 | **1.82 %** |
+
+(vs. the pre-Phase-3.6 stub baseline that reported near-zero placed
+cells because opt_design pruned everything feeding the dead-end stubs.)
+
+**Worst-WNS slack (post-route):** WNS = **-0.335 ns** at clk_axi
+100 MHz, TNS = -1.143 ns over 12 failing endpoints. WHS = +0.017 ns
+(hold met). Slack is marginal but well within "ship the bring-up
+bitstream" tolerance — the failing endpoints are concentrated in
+RX-CIC + Viterbi paths that the carry-over XDC's existing multicycle
+exceptions used to cover (cell-name patterns no longer match after
+the BD wraps `tetra_top` inside an IPI-generated hierarchy; see
+"known follow-ups" below).
+
+**DRC summary:** clean (0 errors, 22 warnings — DPIP-1 ×10 + DPOP-1
+×1 + DPOP-2 ×3 are advisory DSP-pipelining suggestions; PDCN-1569 ×3
++ RTSTAT-10 ×1 + REQP-181 ×4 from the carry-over `auto_pc` couplers).
+
+**Known follow-ups (deferred, do NOT block Phase 4):**
+
+1. *XDC cell-name patterns stale.* The multicycle paths declared in
+   `constraints/libresdr_tetra.xdc` reference cell names like
+   `*u_ul_sch_hu/vit_soft1_sys_reg*` that no longer match after Vivado
+   wraps tetra_top inside `tetra_system_i/tetra_top_0/inst/u_tetra/...`.
+   Vivado emits 5 CRITICAL_WARNINGs at synth_1 (`set_multicycle_path:
+   No valid object(s) found`) and the corresponding paths fall back to
+   the default 10 ns clk_axi setup window — this is the source of the
+   12 failing endpoints / -0.335 ns WNS. Fix: update XDC patterns to
+   the new BD hierarchy prefix.
+
+2. *clk_sys = clk_axi (= FCLK_CLK0 = 100 MHz).* The IF_TETRA_TOP_v1
+   port-list keeps clk_sys as a separate input but the BD currently
+   ties both to the same FCLK_CLK0 net. The CDC primitives at the
+   AXIS fabric boundary (Phase 2 A4) handle the future split (clk_sys
+   driven by a different FCLK_CLK1 frequency or AD9361-derived clock).
+   No action required for Phase 4 air-test.
+
+3. *clock-groups XDC line stale.* `set_clock_groups -asynchronous
+   -group [get_clocks rx_clk] -group [get_clocks clk_fpga_0]` emits 2
+   CRITICAL_WARNINGs because `clk_fpga_0` is renamed `FCLK_CLK0` in
+   the new BD. Functional impact: rx_clk/FCLK_CLK0 paths get full
+   timing analysis (currently meeting timing). Fix: update name.
+
+4. *Width-mismatch warnings on completer↔interconnect ID buses.* The
+   completer's M_AXI_BID/RID is 1 bit; axi_interconnect's SXX_AXI_BID
+   /RID is 3 bit. Vivado pads the upper bits internally — functional
+   but emits 16 warnings per BD-create. Fix (cosmetic): bump
+   `ID_WIDTH` parameter to 3 on the 4 completer instances.
 
 ### Phase 4 — Live A/B on Boards
 
