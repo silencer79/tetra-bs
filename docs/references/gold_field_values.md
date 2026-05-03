@@ -371,8 +371,8 @@ einem Bit-Budget-Konflikt mit der 48-bit TNT führte.
 |   • Year (6 bit) | | `8` ⇒ 2008 (BS-RTC nicht aktuell aber legal) | bits[104..109] |
 |   • Reserved (11 bit) | | `0x7FF` (all-ones, ETSI-konform) | bits[110..120] |
 | `p_number_of_ca_neighbour_cells` | 1 bit | **`1`** | bit[121] |
-| `number_of_ca_neighbour_cells` | `Option<u64>` 3 bit | **siehe Anmerkung** — bits[122..124] gehen über das im Decoder sichtbare 124-Bit-Fenster hinaus (LI=16 Oktetts = 128 bit ⇒ 4 fill bits jenseits bit 123). bits[122..123] = `00` (niedrigste 2 Bit) sichtbar | bits[122..123] |
-| `neighbour_cell_information_for_ca` | `Option<u64>` (conditional) | **`None`** (no inline neighbour list payload, NCA-Liste vermutlich in begleitendem PDU) | absent |
+| `number_of_ca_neighbour_cells` | `Option<u64>` 3 bit | **`0`** (bit-budget-konsistente einzige Antwort, siehe Erklärung unten) | bits[122..124] |
+| `neighbour_cell_information_for_ca` | `Option<u64>` (conditional, nur wenn count > 0) | **`None`** | count = 0 ⇒ kein inline-Record |
 
 ### Encoder-Reset-Defaults (für unsere `cmce_nwrk_bcast.c` / FPGA-ROM)
 
@@ -391,6 +391,39 @@ static const NwrkBcastDefault gold_burst_423 = {
 UTC-time-Subfeld muss in Production aus dem System-RTC (oder einer per-Cell
 TNT-Konfig) gespeist werden, nicht hartkodiert; die anderen Felder bleiben
 statisch pro Cell.
+
+### Erklärung `number_of_ca_neighbour_cells = 0`
+
+Per ETSI EN 300 392-2 §18.4.1.4.1 + §18.4.1.4.6 ist
+`number_of_ca_neighbour_cells` ein 3-Bit-Count (`N` ∈ 0..7) der angibt
+**wieviele Neighbour-Cell-Info-Records inline im D-NWRK-BCAST-PDU folgen**.
+Wenn `N > 0`, folgen `N × neighbour_cell_information_for_ca`-Strukturen
+mit variabler Länge (per §18.5), die jeweils mehrere bit groß sind (Carrier,
+Band, RxLevAccessMin, RadioLink-Timeout, …).
+
+In Gold #423 ist `p_number_of_ca_neighbour_cells = 1` ⇒ Feld ist im PDU.
+Bits 122..124 enthalten den 3-Bit-Count. Bit 124 liegt jenseits des
+124-Bit-Decoder-Dumps, aber bit-budget-Logik gibt nur eine konsistente
+Antwort:
+
+- **LI = 16 octets = 128 air-bits.** Nach bit 121 (p_NCA=1) sind 6 Bits
+  übrig: 3 Bit count + bis zu 3 Bit weiter.
+- **Wenn `N > 0`:** Inline-Records müssten direkt folgen. Kleinste sinnvolle
+  Neighbour-Cell-Info per §18.5 ist deutlich > 3 Bit (mindestens 12 Bit
+  Carrier + Service-Details). Passt **nicht** in die verbleibenden 4 Bits
+  jenseits Bit 123. **Inkonsistent.**
+- **Wenn `N = 0`:** Nach dem Count keine weiteren Body-Bits. Restliche
+  4 Bits (124..127) = fill zu Octet-Grenze. **Konsistent ✓**
+
+⇒ **`N = 0`** ist die einzige bit-budget-konsistente Belegung. Bit 124
+muss `0` sein. Passt zur physikalischen Situation: stand-alone Test-BS,
+keine deklarierten Nachbar-Cells.
+
+**Encoder-Verhalten in S4:** Bei `nwrk_num_ca_neighbour_cells = 0` wird
+das Feld korrekt emittiert (3 Bits = `000`). Bei `> 0` returnt der Encoder
+`-ENOTSUP`, weil inline-Records nicht implementiert sind (auch bluestation
+hat dort `unimplemented!()`). Wenn künftig echte Multi-Cell-Konfiguration
+gebraucht wird, müssen die §18.5 Inline-Record-Encoder ergänzt werden.
 
 ### Buggy upstream constant flagged
 

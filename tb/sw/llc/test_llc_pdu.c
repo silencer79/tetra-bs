@@ -510,22 +510,21 @@ static void test_crc32_empty(void)
 static void test_crc32_known_vector(void)
 {
     /* CRC-32 over ASCII "123456789" (72 bits MSB-first) using THIS
-     * implementation's exact configuration:
-     *   poly=0x04C11DB7, init=0xFFFFFFFF, xorout=0xFFFFFFFF, NOT reflected
-     *   (bits feed MSB-first as they appear in the BitBuffer).
+     * implementation's exact configuration — carry-over from
+     * tetra-zynq-phy production decoder
+     * (`/home/kevin/claude-ralph/tetra/scripts/decode_dl.py:crc32_check_llc`):
+     *   poly=0xEDB88320 (reflected IEEE 802.3 generator),
+     *   init=0xFFFFFFFF, xorout=0xFFFFFFFF,
+     *   bit-feed: MSB-first within each byte (matches BitBuffer +
+     *             on-air TETRA bit order, NOT the standard ISO-HDLC
+     *             LSB-first-within-byte convention used by zlib).
      *
-     * Expected value 0xFC891918 confirmed by an independent reference
-     * implementation of the same parameters (see /tmp/crc_check.c during
-     * development; algorithm is standard textbook MSB-first CRC division).
-     *
-     * NOTE: This is NOT the famous CRC-32/IEEE check value 0xCBF43926.
-     * That value applies to the REFLECTED form used by Ethernet/zlib;
-     * we use the non-reflected form so MSB-first bit-feed from the
-     * BitBuffer matches on-air bit ordering. See llc_pdu.c llc_crc32
-     * doc-comment for the full configuration + outstanding ETSI §22
-     * polynomial-confirmation TODO. */
+     * The expected value 0x1898913F is what the carry-over algorithm
+     * produces for the same test input under MSB-first bit-feed.
+     * Receiver-side correctness is checked by the residue-check test
+     * below (must equal 0xDEBB20E3 after data+FCS feed). */
     static const uint8_t v[] = { '1','2','3','4','5','6','7','8','9' };
-    TEST_ASSERT_EQUAL_HEX32(0xFC891918u, llc_crc32(v, 9 * 8));
+    TEST_ASSERT_EQUAL_HEX32(0x1898913Fu, llc_crc32(v, 9 * 8));
 }
 
 /* ---------------------------------------------------------------------------

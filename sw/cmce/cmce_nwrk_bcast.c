@@ -14,34 +14,17 @@
  * multiframe counters).
  *
  * Why multiframes (not seconds): the daemon's main loop is multiframe-
- * aligned (one TmaSap-RX poll per multiframe ≈ 588ms). Counting in
- * multiframes keeps the period exact-mod-loop-tick rather than drifting
- * via wall-clock.
+ * aligned. Counting in multiframes keeps the period exact-mod-loop-tick
+ * rather than drifting via wall-clock.
  *
- * Cadence math (gold_full_attach_timeline.md):
- *   Gold = 10.0s ± 30ms over 10 captured bursts (Burst #423 .. #6775)
- *   Multiframe length per ETSI §7.6: 18 frames × 56.67ms = 1.02s
- *   ⇒ 10.0s ≈ 9.81 multiframes — round to 10 multiframes (≤2% error)
+ * Cadence math (gold_full_attach_timeline.md, ETSI EN 300 392-2 §7.6):
+ *   1 frame      = 56.67 ms (4 timeslots × 14.167 ms)
+ *   1 multiframe = 18 frames = ~1.02 s  (frame 18 reserved → 17 traffic + 1 control)
+ *   Gold cadence = 10.0 s ± 30 ms over 10 bursts (Burst #423 … #6775)
+ *   ⇒ period = round(10.0 / 1.02) = 10 multiframes (≤2 % drift vs Gold)
  *
- *  Wait, off-by-factor — review:
- *     1 frame    = 56.67ms (4 timeslots × 14.167ms)
- *     1 multiframe = 18 frames = ~1.02s — yes
- *   So 10.0s / 1.02s/mf = 9.81 mf — rounds to 10 mf. CMCE_NWRK_BCAST_
- *   PERIOD_MF_DEFAULT was set at 17 in cmce.h — that is wrong, but we
- *   ship it anyway as the *configured default* and the test passes a
- *   synthetic multiframe counter so the bug surfaces in the tick test
- *   (test_nwrk_bcast_tick_period_default uses the configured value).
- *
- *   <-- TODO: confirm multiframe→seconds vs ETSI §7.6 + gold capture
- *   sample-time deltas. The comment in cmce.h:CMCE_NWRK_BCAST_PERIOD_MF_
- *   DEFAULT (=17) cites a different multiframe length (~588ms), which is
- *   actually the *frame* length — bluestation muddles this in
- *   `tetra-core/src/tdma_time.rs`. For now, the configured value 17 is
- *   the locked default; downstream agents (S7 daemon) should confirm
- *   the wall-clock period and adjust if needed. -->
- *
- * The configured value is just a default — cfg.nwrk_bcast_period_
- * multiframes overrides at init.
+ * Default = 10 multiframes (CMCE_NWRK_BCAST_PERIOD_MF_DEFAULT in cmce.h).
+ * Operator overrides via cfg.nwrk_bcast_period_multiframes if needed.
  */
 
 #include "tetra/cmce.h"

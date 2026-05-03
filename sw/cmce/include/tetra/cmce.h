@@ -303,7 +303,7 @@ typedef struct {
 /* Default period: 10s / (18 frames * 56.67ms) = 9.81 → round to 10
  * multiframes, accepting <0.5% jitter vs Gold. The exact value can be
  * overridden via cfg.nwrk_bcast_period_multiframes. */
-#define CMCE_NWRK_BCAST_PERIOD_MF_DEFAULT 17u  /* 17 * ~588ms ≈ 10.0s     */
+#define CMCE_NWRK_BCAST_PERIOD_MF_DEFAULT 10u  /* 10 multiframes * 1.02s ≈ 10.2s, matches Gold cadence */
 
 #define CMCE_NWRK_DEFAULT_CRSP   0x5655u  /* gold #423 cell_re_select_params*/
 #define CMCE_NWRK_DEFAULT_CL_CA  0x0u     /* gold #423 cell_load_ca         */

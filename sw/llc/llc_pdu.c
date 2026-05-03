@@ -5,7 +5,7 @@
  * Implements:
  *   - llc_pdu_encode / llc_pdu_decode for every LlcPduType in llc.h
  *     (BL-DATA, BL-ADATA, BL-UDATA, BL-ACK, AL-SETUP, plus +FCS variants)
- *   - llc_crc32 — CRC-32 (IEEE 802.3, polynomial 0x04C11DB7, reflected
+ *   - llc_crc32 — CRC-32 (IEEE 802.3, reflected polynomial 0xEDB88320,
  *     input/output, init/xorout = 0xFFFFFFFF) over MSB-first bit-buffer
  *
  * Bit-layout per source-of-truth (CLAUDE.md §1):
@@ -32,32 +32,26 @@
 #include <string.h>
 
 /* ---------------------------------------------------------------------------
- * CRC-32 — table-free, bit-serial.
+ * CRC-32 — table-free, bit-serial. Carried over from `tetra-zynq-phy`
+ * production decoder (`/home/kevin/claude-ralph/tetra/scripts/decode_dl.py
+ * :crc32_check_llc`) which has been validated against on-air captures.
  *
- *   poly = 0x04C11DB7   (IEEE 802.3 generator polynomial)
+ *   poly = 0xEDB88320   (reflected IEEE 802.3 generator)
  *   init = 0xFFFFFFFF
- *   xor  = 0xFFFFFFFF
- *   refin / refout: false (NOT reflected — bits feed MSB-first to match the
- *                          BitBuffer bit-ordering, which is the natural
- *                          ordering for TETRA on-air bits)
+ *   xor  = 0xFFFFFFFF   (encoder side; receiver uses residue check instead)
+ *   bit-feed: per-bit, MSB-first within each byte (matches BitBuffer +
+ *             on-air TETRA bit order). Each bit XORs into the CRC register
+ *             LSB, then crc shifts right; reflected polynomial XORs back
+ *             on feedback=1.
  *
- * This is the "CRC-32/MPEG-2"-style configuration except for the xorout
- * (MPEG-2 has xorout=0, this one has xorout=0xFFFFFFFF). Operates over an
- * arbitrary-length MSB-first bit buffer matching BitBuffer semantics.
- *
- * Test vector for this exact configuration over ASCII "123456789" (72
- * bits MSB-first) = 0x649C2FD3. Verified by independent reference impl
- * (poly 0x04C11DB7, init 0xFFFFFFFF, xorout 0xFFFFFFFF, refin/refout=false).
- *
- * <-- TODO: confirm polynomial + reflection convention against ETSI
- * EN 300 392-2 §22. The §22 PDF is not in docs/references/; until added,
- * FCS verification is round-trip-only. The Gold-Ref M2 capture uses only
- * the no-FCS LLC variants (DL#735 BL-ADATA "kein FCS", UL#0 BL-DATA, UL#2
- * BL-ACK), so we have no on-air bit-vector to validate against. -->
+ * Receiver residue check: feed data + appended 32-bit FCS bits in the
+ * same order; residue equals 0xDEBB20E3 ⇒ FCS valid. Mirrors
+ * tetra-zynq-phy `crc32_check_llc` exactly.
  * ------------------------------------------------------------------------- */
-#define LLC_CRC32_POLY    0x04C11DB7u
+#define LLC_CRC32_POLY    0xEDB88320u
 #define LLC_CRC32_INIT    0xFFFFFFFFu
 #define LLC_CRC32_XOROUT  0xFFFFFFFFu
+#define LLC_CRC32_RESIDUE 0xDEBB20E3u
 
 uint32_t llc_crc32(const uint8_t *data, size_t len_bits)
 {
@@ -72,11 +66,11 @@ uint32_t llc_crc32(const uint8_t *data, size_t len_bits)
         const uint8_t bit_off  = (uint8_t) (7u - (i & 0x7u));
         const uint32_t bit     = (uint32_t) ((data[byte_idx] >> bit_off) & 0x1u);
 
-        /* Non-reflected: feed bit into MSB of the working register.
-         * Standard textbook "CRC division" form. */
-        const uint32_t mix = ((crc >> 31) ^ bit) & 0x1u;
-        crc <<= 1;
-        if (mix != 0u) {
+        /* Reflected form (carry-over from tetra-zynq-phy decode_dl.py): each
+         * input bit XORs into LSB; if feedback=1, crc ^= reflected-poly. */
+        const uint32_t feedback = (bit ^ (crc & 0x1u)) & 0x1u;
+        crc >>= 1;
+        if (feedback) {
             crc ^= LLC_CRC32_POLY;
         }
     }
@@ -106,9 +100,10 @@ static uint32_t crc32_over_bb_window(const BitBuffer *bb,
         const uint8_t bit_off  = (uint8_t) (7u - (i & 0x7u));
         const uint32_t bit     = (uint32_t) ((bb->buffer[byte_idx] >> bit_off) & 0x1u);
 
-        const uint32_t mix = ((crc >> 31) ^ bit) & 0x1u;
-        crc <<= 1;
-        if (mix != 0u) {
+        /* Reflected form, identical to tetra-zynq-phy decode_dl.py. */
+        const uint32_t feedback = (bit ^ (crc & 0x1u)) & 0x1u;
+        crc >>= 1;
+        if (feedback) {
             crc ^= LLC_CRC32_POLY;
         }
     }
