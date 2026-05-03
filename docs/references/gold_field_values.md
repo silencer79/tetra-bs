@@ -315,119 +315,94 @@ gegen einen tatsächlichen Capture zu verifizieren.
 
 ## mle/D-NWRK-BROADCAST (`mle/pdus/d_nwrk_broadcast.rs`)
 
-Quelle: `scripts/gen_d_nwrk_broadcast.py:GOLD_INFO_124` — die 124 Bits
-Info-Wort (MAC-RESOURCE + LLC + MLE + D-NWRK-BCAST PDU) aus Burst #423 der
-Gold-Cell DL-Capture (MN=44 FN=04 TN=1, 6.005s after capture-start).
+Quelle: `decode_dl.py` Lauf 2026-05-03 gegen `GOLD_DL_ANMELDUNG_GRUPPENWECHSEL_GRUPPENRUF.wav`,
+Burst #423 (TN=1 FN=04 MN=44, AACH `0x0249`, addr=SSI=`0xFFFFFF`, LI=16). Dies
+ersetzt die frühere Bit-by-Bit-Analyse aus `scripts/gen_d_nwrk_broadcast.py:GOLD_INFO_124`,
+die einen 8-bit-Shift-Bug in der SSI-Region hatte.
 
-**Hex-Bytes:** `20 81 FF FF FF FF 05 52 B2 A9 8F CE FC 84 23 F` (124 Bit, 15 Bytes + 4 Bit Tail).
+**124 Info-Bits aus dem Decoder (Bit 0 = first on-air bit, MSB-first):**
 
-### MAC-RESOURCE Wrapper (bits 0..50)
+```
+0010000010000001 111111111111111111111111 000 0010 101 010
+0101011001010101 00 1 1 000111111001110111111001000010000100011111111111100
+```
 
-| Bit-pos | Field | Gold-Ref Value |
-|---|---|---|
-| [0..1] | mac_pdu_type | 00 (MAC-RESOURCE) |
-| [2] | fill_bit | 1 |
-| [3] | pos_of_grant | 0 |
-| [4..5] | encryption_mode | 00 |
-| [6] | random_access_flag | 0 |
-| [7..12] | length_indication | **16** (= 16 Oktetts = 128 bit, +4 fill = 124 info bits) |
-| [13..15] | address_type | 001 (SSI) |
-| [16..39] | SSI | **0xFFFFFF** (broadcast) |
-| [40] | (siehe Konflikt-Anmerkung unten) | 1 |
-| [41..49] | (siehe unten) | 11111110 / 0 |
-| [50] | (siehe unten) | 0 |
-
-**KONFLIKT Gold ↔ Bluestation:** Die bluestation-MAC-RESOURCE-Spec
-(`tetra-pdus/src/umac/pdus/mac_resource.rs`) erwartet nach SSI:
-`power_control_flag(1)` → if 1: `power_control_element(4)` →
-`slot_granting_flag(1)` → if 1: `slot_grant_elem(8)` → `chan_alloc_flag(1)`.
-
-In Gold-Burst #423 sind bits 40..50 = `11111111000`. Mit der
-bluestation-Layout würde dies pcf=1 + pce=1111 + sgf=1 + sge=11000001 +
-caf=0 ergeben — TM-SDU würde dann bei bit 55 starten und dort wäre die
-LLC-PDU-Type `1010=10=AlAlUdataAlUfinal`, was nicht zur dokumentierten
-"BL-UDATA"-Annahme aus `reference_gold_full_attach_timeline.md` Z.27
-("LLC=BL-UDATA") passt.
-
-**Wenn TM-SDU stattdessen bei bit 51 startet** (so wie es das gold-attach
-Memo für DL#735 tut, dort mit pwr_flag=0 explizit), ergibt sich
-LLC=`0010`=2=BL-UDATA ✓, MLE-disc=`101`=5=MLE-itself ✓, MLE-prim=`010`=2
-=D-NWRK-BCAST ✓, alles selbst-konsistent.
-
-**⇒ Gold-Layout für D-NWRK-BCAST nutzt offenbar einen anderen MAC-RESOURCE-
-Header-Pfad als bluestation-Standard.** Vermutung: für Broadcast-Adresse
-(SSI=0xFFFFFF) werden pwr_flag/sgf/caf-Felder evtl. gar nicht emittiert
-oder die Encoder-Vorlage hat eine spezielle 11-bit-Konstante an Position
-[40..50]. Bit-extrahiert hängen die 11 bits = `11111111000` möglicherweise
-zu `slot_grant_flag=1, slot_grant_elem=0xFE, chan_alloc_flag=0` zusammen,
-wenn pwr_flag implizit nicht serialisiert wird (= `pwr_flag=0` gibt es
-nicht als Bit in dieser Variante). Dann:
-* bit 40 = sgf = 1 → 8 bit slot_grant_elem = bits[41..48] = `11111110` = 0xFE
-* bit 49 = caf = 0
-* bit 50 = unbekannt → könnte 1. fill bit sein? oder Teil von TM-SDU?
-
-Die saubere Interpretation TM-SDU @ bit 51 (das gleiche Offset wie im
-gold-attach DL#735) liefert die kohärenten LLC/MLE-Werte. Wir empfehlen,
-diesen Layout-Konflikt vor M-Phase H.7-Implementation **mit Kevin
-abzuklären** (siehe Open uncertainties).
-
-### LLC + MLE Wrapper (bits 51..60)
+### MAC-RESOURCE Wrapper (bits 0..42)
 
 | Bit-pos | Field | Gold-Ref Value |
 |---|---|---|
-| [51..54] | llc_pdu_type | 0010 (=2, **BL-UDATA**) |
-| [55..57] | mle_disc | 101 (=5, **MLE-itself** per `parse_mle` decode_dl.py) |
-| [58..60] | mle_prim (3-bit MLE-Protocol-PDU-Type) | 010 (=2, **D-NWRK-BCAST**) |
+| [0..1] | mac_pdu_type | `00` (MAC-RESOURCE) |
+| [2] | fill_bit | `1` |
+| [3] | pos_of_grant | `0` |
+| [4..5] | encryption_mode | `00` |
+| [6] | random_access_flag | `0` |
+| [7..12] | length_indication | **`16`** (16 Oktetts = 128 bit; 124 info + 4 fill) |
+| [13..15] | address_type | `001` (SSI) |
+| [16..39] | SSI | **`0xFFFFFF`** (broadcast) |
+| [40] | pwr_flag | `0` ⇒ no power_control_element |
+| [41] | slot_grant_flag | `0` ⇒ no slot_grant_elem |
+| [42] | chan_alloc_flag | `0` ⇒ no chan_alloc_element |
 
-**Wichtige Korrektur zu bluestation `DNwrkBroadcast::from_bitbuf`:** Die
-bluestation-Implementierung liest `pdu_type` als 3 bit und matched gegen
-`MlePduTypeDl::DNwrkBroadcast=2`. Das ist konsistent mit unserer Decodierung
-hier (mle_prim=2 = 3-bit). Bluestation `from_bitbuf` wird also korrekt mit
-diesem Bit-Slice aufgerufen, **nachdem** der Caller die LLC + 3-bit-MLE-disc
-bereits konsumiert hat. Der bluestation-Code annotiert das fälschlich als
-`pdu_type` — tatsächlich ist es das `mle_prim`-Feld pro `parse_mle` der
-decode_dl.py.
+**Wrapper endet bei bit 42.** TM-SDU startet bei **bit 43** (kompakte
+Variante: alle drei Optional-Flags = 0 für broadcast-PDU). Die ältere
+Version dieses Memos ging fälschlich von TM-SDU @ bit 51 aus, was zu
+einem Bit-Budget-Konflikt mit der 48-bit TNT führte.
 
-### D-NWRK-BCAST Body Felder (bits 61..123)
+### LLC + MLE Wrapper (bits 43..52)
+
+| Bit-pos | Field | Gold-Ref Value |
+|---|---|---|
+| [43..46] | llc_pdu_type | `0010` (= 2, **BL-UDATA**) |
+| [47..49] | mle_disc | `101` (= 5, **MLE-itself**) |
+| [50..52] | mle_prim (3-bit MLE-Protocol-PDU-Type) | `010` (= 2, **D-NWRK-BCAST**) |
+
+### D-NWRK-BCAST Body Felder (bits 53..123)
 
 | Field | Bluestation Type / Width | Gold-Ref Value (Burst #423) | Source |
 |---|---|---|---|
-| `cell_re_select_parameters` | `u16` (16 bit, Type 1) | **`0x5655`** (= 22101) | bits[61..76] = `0101011001010101` |
-| `cell_load_ca` | `u8` (2 bit, Type 1) | **`0`** (= cell load 0%-25%, "low load") | bits[77..78] = `00` |
-| o-bit | 1 bit | bit[79] = `1` (laut früher Decode-Annotation) — **PROVISORISCH, siehe Bit-Budget unten** | bit[79] |
-| `p_tetra_network_time` | 1 bit | bit[80] = `1` (laut früher Annotation) — **PROVISORISCH** | bit[80] |
-| `tetra_network_time` | per ETSI EN 300 392-2 §18.5.24 Table 18.100: **48 bit** (UTC 24 + sign 1 + offset 6 + year 6 + reserved 11). Bluestation 48-bit-Deklaration ist ETSI-konform | **NICHT abschließend dekodierbar aus GOLD_INFO_124** — siehe Bit-Budget-Anmerkung | — |
-| `p_number_of_ca_neighbour_cells` | 1 bit | unklar (siehe unten) | — |
-| `number_of_ca_neighbour_cells` | bluestation `Option<u64>` (3 bit) | wahrscheinlich **`None`** | — |
-| `neighbour_cell_information_for_ca` | bluestation `Option<u64>` (variable, conditional) | **`None`** | absent |
+| `cell_re_select_parameters` | `u16` (16 bit, Type 1) | **`0x5655`** (= 22 101) | bits[53..68] = `0101011001010101` |
+| `cell_load_ca` | `u8` (2 bit, Type 1) | **`0`** (= cell load 0%-25%, "low load") | bits[69..70] = `00` |
+| o-bit | 1 bit | **`1`** (Type-2 fields follow) | bit[71] |
+| `p_tetra_network_time` | 1 bit | **`1`** (TNT present) | bit[72] |
+| `tetra_network_time` | `Option<u64>` 48 bit per ETSI Table 18.100 | **`0x1F9DF9_0847FF`** | bits[73..120] |
+|   • UTC time (24 bit) | | `0x1F9DF9` ≈ 12 Tage seit Jan 1 UTC | bits[73..96] |
+|   • Local offset sign (1 bit) | | `0` (positive) | bit[97] |
+|   • Local offset (6 bit) | | `4` × 15 min = +60 min (CET) | bits[98..103] |
+|   • Year (6 bit) | | `8` ⇒ 2008 (BS-RTC nicht aktuell aber legal) | bits[104..109] |
+|   • Reserved (11 bit) | | `0x7FF` (all-ones, ETSI-konform) | bits[110..120] |
+| `p_number_of_ca_neighbour_cells` | 1 bit | **`1`** | bit[121] |
+| `number_of_ca_neighbour_cells` | `Option<u64>` 3 bit | **siehe Anmerkung** — bits[122..124] gehen über das im Decoder sichtbare 124-Bit-Fenster hinaus (LI=16 Oktetts = 128 bit ⇒ 4 fill bits jenseits bit 123). bits[122..123] = `00` (niedrigste 2 Bit) sichtbar | bits[122..123] |
+| `neighbour_cell_information_for_ca` | `Option<u64>` (conditional) | **`None`** (no inline neighbour list payload, NCA-Liste vermutlich in begleitendem PDU) | absent |
 
-### Bit-Budget-Anmerkung TNT
+### Encoder-Reset-Defaults (für unsere `cmce_nwrk_bcast.c` / FPGA-ROM)
 
-`GOLD_INFO_124` ist exakt **124 Bit** info (per `gen_d_nwrk_broadcast.py`
-Header-Kommentar + `assert`). Mit der Body-Position-Annahme oben würde
-`p_tetra_network_time=1` ab bit 81 ein 48-bit-Feld brauchen → reicht bis
-bit 128 → **passt nicht** in 124 Bit (nur 43 Bit verfügbar, 81..123).
+```c
+static const NwrkBcastDefault gold_burst_423 = {
+    .cell_re_select_parameters = 0x5655,
+    .cell_load_ca              = 0,
+    .o_bit                     = 1,
+    .p_tetra_network_time      = 1,
+    .tetra_network_time        = 0x1F9DF9'0847FF, /* updates per cell RTC tick */
+    .p_number_of_ca_neighbour_cells = 1,
+    .number_of_ca_neighbour_cells   = 0, /* low 3 bit; full 3-bit needs decode beyond bit 123 */
+};
+```
 
-Möglichkeiten:
+UTC-time-Subfeld muss in Production aus dem System-RTC (oder einer per-Cell
+TNT-Konfig) gespeist werden, nicht hartkodiert; die anderen Felder bleiben
+statisch pro Cell.
 
-1. Die Body-Bit-Position-Annahme ist falsch (MAC-RESOURCE-Wrapper hat
-   eine andere Größe als oben — siehe der bereits flagged
-   "MAC-RESOURCE Header-Layout"-Konflikt). Wenn der Wrapper z.B. 8 Bit
-   mehr verbraucht, würde TNT 48 Bit innerhalb von 132 Bit Info
-   tatsächlich passen → MAC-RESOURCE-Layout zuerst klären.
-2. `o-bit=0` ODER `p_tetra_network_time=0` in Gold #423 — d.h. TNT ist
-   **absent** in dieser Burst-Variante, und die 24-bit "0x1F9DF9" Werte,
-   die in einer früheren Decode-Iteration als TNT gelesen wurden, sind
-   in Wahrheit Padding-Bits (LI=16 Oktetts = 128 Air-Bits ⇒ 4 Fill-Bits
-   nach 124 Info-Bits, plus optional zusätzliche Fill innerhalb des
-   Info-Worts wenn keine Optional-Felder vorhanden).
-3. Hersteller-spezifische Kürzung der TNT auf 24 Bit (UTC-Subfeld nur)
-   — würde gegen ETSI verstoßen.
+### Buggy upstream constant flagged
 
-**Kein Gold-vs-Bluestation-Konflikt im Datenmodell**: ETSI Table 18.100
-und Bluestation 48-bit deklarieren beide das gleiche Format. Der Konflikt
-ist **bit-allocation in Gold #423**, nicht der Field-Type. Vor
-H.7-Implementation: frischer `decode_dl.py`-Lauf gegen Gold #423 mit
+`/home/kevin/claude-ralph/tetra/scripts/gen_d_nwrk_broadcast.py:GOLD_INFO_124`
+hat einen **8-bit-Shift-Bug**: enthält ein extra `0xFF`-Byte direkt nach den
+korrekten 24 SSI-Bits, was alle nachfolgenden Felder um 8 Bit shiftet und
+das letzte Byte am Frame-Ende abschneidet. Die Konstante reproduziert NICHT
+Gold-Burst #423. **Maßgeblich ist der Decoder-Dump oben** — wenn die
+upstream gen-Script-Konstante in einem CMCE-TB als Fixture verwendet wird,
+muss sie durch die obigen 124 Bit ersetzt werden.
+
+### Veraltete Bit-Budget-Anmerkung (zur Historie)
 expliziter MLE/D-NWRK-BROADCAST-Decoderlogik, dann Auswertung welche
 Möglichkeit oben zutrifft.
 
@@ -474,18 +449,51 @@ eine **explizite Kevin-Entscheidung** vor bit-genauer Encoder-Implementation:
    slot_grant_elem=0xC1, chan_alloc_flag=0` enthält (was unwahrscheinlich
    ist da kein PMR-BS einen Power-Control für Broadcast macht).
 
-2. **D-NWRK-BCAST `tetra_network_time` in Gold #423 — present oder absent?**
-   ETSI EN 300 392-2 v3.8.1 §18.5.24 Table 18.100 spezifiziert TNT als
-   **48 bit** (UTC 24 + sign 1 + offset 6 + year 6 + reserved 11);
-   bluestation 48-bit-Deklaration ist ETSI-konform — **kein Datenmodell-
-   Konflikt**. Bit-Budget in `GOLD_INFO_124` (124 Info-Bit) reicht
-   aber nicht für 48 Bit TNT ab bit 81 (nur 43 Bit frei). Wahrscheinlich
-   ist `o-bit=0` ODER `p_tetra_network_time=0` in Gold #423 ⇒ TNT
-   absent in dieser Burst-Variante; der ursprünglich als 24-bit-TNT-Wert
-   gemeldete Slice (`0x1F9DF9`) ist dann Padding-Decode-Artefakt. **Action:**
-   `decode_dl.py` mit explizitem D-NWRK-BCAST-Decoder gegen Gold #423
-   re-laufen, o-bit/p-bit-Status verifizieren. Konservativer Encoder-
-   Default bis dahin: TNT absent (o-bit=0).
+2. **D-NWRK-BCAST `tetra_network_time` in Gold #423 — RESOLVED 2026-05-03.**
+   Frischer `decode_dl.py`-Lauf gegen `GOLD_DL_ANMELDUNG_GRUPPENWECHSEL_GRUPPENRUF.wav`
+   (Burst #423, TN=1 FN=04 MN=44, AACH `0x0249`) liefert die 124 Info-Bits:
+   ```
+   0010000010000001 111111111111111111111111 000 0010 101 010
+   0101011001010101 00 1 1 000111111001110111111001000010000100011111111111100
+   ```
+   Bit-positions (richtige MAC-RESOURCE-Wrapper-Größe = 43 bit, nicht 51):
+   - `[0..15]` MAC-RESOURCE-Header: pdu_type=00, fill=1, PoG=0, enc=00, RA=0,
+     LI=`010000`=16, addr_type=`001`=SSI.
+   - `[16..39]` SSI = `0xFFFFFF` (broadcast).
+   - `[40]` pwr_flag=0, `[41]` slot_grant_flag=0, `[42]` chan_alloc_flag=0
+     ⇒ TM-SDU startet bei **bit 43** (NICHT bit 51 wie ursprünglich vom
+     S4-Audit angenommen).
+   - `[43..46]` LLC pdu_type=`0010`=BL-UDATA.
+   - `[47..49]` MLE-disc=`101`=MLE-itself.
+   - `[50..52]` mle_prim=`010`=D-NWRK-BCAST.
+   - `[53..68]` `cell_re_select_parameters` = **`0x5655`**.
+   - `[69..70]` `cell_load_ca` = **`0`**.
+   - `[71]` o-bit = **`1`**.
+   - `[72]` `p_tetra_network_time` = **`1`**.
+   - `[73..120]` `tetra_network_time` (48 bit, ETSI Table 18.100) =
+     **`0x1F9DF9_0847FF`**:
+     - UTC time (24 bit) = `0x1F9DF9` = 2 072 057 (×½ sec ≈ 12 Tage seit
+       Jan 1 UTC der Network-Time-Year)
+     - Local time offset sign = `0` (positive)
+     - Local time offset (6 bit) = `4` × 15 min = +60 min (CET)
+     - Year (6 bit) = `8` ⇒ Year 2008 (BS-RTC nicht aktuell, aber bit-feld
+       legal)
+     - Reserved (11 bit) = `0x7FF` ✓ (ETSI-konform all-ones)
+   - `[121]` `p_number_of_ca_neighbour_cells` = `1` (3-bit count + 4-bit fill
+     im LI=16-Padding-Bereich nicht im 124-bit Decoder-Dump sichtbar; LI=16
+     octets = 128 bit ⇒ 4 fill bits jenseits bit 123).
+
+   **Konsequenz für unseren Encoder:** o-bit=1, p_TNT=1, 48-bit TNT mit
+   ETSI-Subfeld-Layout. TNT-Wert dynamisch aus Cell-RTC oder per-Cell-
+   Konfiguration. Default-Reset-Wert = `0x1F9DF9_0847FF` (von Gold #423
+   übernommen, BS-Operator setzt aktuellen Wert via `REG_RTC_*` falls
+   gewünscht).
+
+   **Buggy upstream constant flagged:** `GOLD_INFO_124` in
+   `/home/kevin/claude-ralph/tetra/scripts/gen_d_nwrk_broadcast.py`
+   hat einen 8-bit-Shift-Bug (extra `0xFF`-Byte in der SSI-Region nach
+   den korrekten 24 SSI-Bits). Die Konstante ist NICHT verbindlich;
+   maßgeblich ist der Decoder-Dump oben.
 
 3. **U-LOC-UPDATE-DEMAND `energy_saving_mode` (3-bit Wert).** Memo
    `reference_gold_full_attach_timeline.md` Z.76 zitiert "ESM=1" ist das
