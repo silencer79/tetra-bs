@@ -1,0 +1,45 @@
+# Build artifacts
+build/
+*.o
+*.a
+*.so
+*.elf
+*.bit
+*.bin
+*.bif
+
+# Vivado
+*.jou
+*.log
+.Xil/
+vivado_*.backup.*
+*.dcp
+*.rpt
+.vivado_*
+
+# Editor
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test outputs
+*.vvp
+*.vcd
+*.fst
+__pycache__/
+*.pyc
+
+# Large captures (keep separately, not in git)
+wavs/*.wav
+wavs/*.cfile
+!wavs/README.md
+
+# Local config
+.env
+*.local
