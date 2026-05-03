@@ -637,42 +637,60 @@ work — `sw/dma_io/dma_io.c` needs `\`ifdef HAVE_COSIM_SHM` block; UMAC
 reassembly chain has to come online in cosim (currently stubbed under
 `TETRA_TOP_NO_PHY`).
 
-### Phase 3.5 — Hardware bring-up (open blocker before Phase 4) 🔴
+### Phase 3.5 — Hardware bring-up ✅
 
-Vivado synth pipeline (`make synth` → `scripts/build/synth.tcl`) is wired
-end-to-end and pins the `axi_dma:7.1` IP config (SG=1, S2MM_DRE=1,
-addr_width=32, data_width=32 per channel). The IP gets created OK and
-its OOC synth completes. **`synth_design` then fails** at top-level
-elaboration because `rtl/infra/tetra_axi_dma_wrapper.v` instantiates
-`axi_dma_channel_inst` with a slim port-list + custom parameters
-(`CHANNEL_ID`, `DIR_IS_S2MM`, slim AXIS s/m + slim AXI4-MM r/w +
-`irq_done`/`frame_count`/`overrun_pulse`/`underrun_pulse`) that match
-the simulation behavioural model `tb/rtl/models/axi_dma_v7_1_bhv.v`.
-The real LogiCORE IP exposes the full port-list (S_AXI_LITE control,
-separate SG master, mm2s/s2mm_introut, full burst signals) and accepts
-none of those parameters.
+**Closed 2026-05-03 evening (Kevin), branch `feat/axi-dma-sg-shim`.**
+Decision: Option B — SG-mode with descriptor manager in BRAM.
 
-**Open architectural decision required (not autonomous):** add a
-synthesis-only shim `rtl/infra/ip/axi_dma_channel_inst.v` that exposes
-the slim port/param shape externally and internally instantiates the
-real `axi_dma:7.1` IP. Two design choices are roughly equivalent for
-us (4–8h work either way):
+Resolved in three RTL artefacts:
 
-- **Shim option A — simple-mode (no SG).** Re-config the IP with
-  `c_include_sg=0`. Shim drives DMACR/DMASR/SA/DA/LENGTH per-transfer
-  via an internal AXI-Lite master, fed from a small descriptor BRAM
-  the shim manages. Pro: no DDR descriptor writes, no SG-engine state
-  machine. Contra: re-program registers per burst, burst-throughput
-  tax.
-- **Shim option B — keep SG-mode, manage descriptors in BRAM.** Shim
-  contains a tiny descriptor manager + ring of N descriptors in BRAM,
-  tied to the IP's M_AXI_SG. Pro: classic Xilinx flow, IRQ-on-completion
-  handles itself. Contra: more state machine, BRAM cost.
+1. **`rtl/infra/ip/axi_dma_channel_inst.v` — synthesis-only shim** (~700
+   LOC). Exposes the slim port/param shape (`CHANNEL_ID`, `DIR_IS_S2MM`,
+   slim AXIS + slim AXI4-MM + telemetry pulses, matching
+   `tb/rtl/models/axi_dma_v7_1_bhv.v` 1:1) and internally instantiates
+   the real LogiCORE `axi_dma:7.1` IP under the renamed name
+   `axi_dma_v71_logicore`. Holds a per-direction descriptor ring of
+   16 × 32 B in BRAM (RAM_STYLE="BLOCK"), intercepts the IP's M_AXI_SG
+   bus locally with a BRAM-backed AXI4 slave (descriptors do NOT
+   round-trip through PS-DDR), and runs an inline AXI-Lite master that
+   programs CURDESC/DMACR.RS=1/TAILDESC at boot and advances TAILDESC
+   on each completion IRQ.
 
-Until one is picked + implemented, `make synth` fails fast with the
-exact error logged in `scripts/build/synth.tcl` TODO block + the runme.log
-under `build/vivado/tetra_bs.runs/synth_1/`. **Not a blocker for Phase
-0–3 development**; only gates Phase 4 (live A/B needs a bitstream).
+2. **`rtl/tetra_synth_top.v` — synth-only wrapper around `tetra_top`**.
+   `tetra_top.v` exposes 4× AXI-MM + AXI-Lite + IRQs at the top-level
+   (per IF_TETRA_TOP_v1, locked) — 402 ports vs xc7z020clg400-1's 221
+   user I/O. The wrapper exposes only real board pins (AD9361 LVDS,
+   GPIO, I2C), terminates the AXI ports with always-ready stubs,
+   inserts IBUFDS/OBUFDS for the LVDS pin pairs, and derives the
+   fabric clock internally from the AD9361 RX clock pin. Goes away
+   when a real PS7 instance + Vivado block design is added.
+
+3. **`scripts/build/synth.tcl`** — tcl rename of the IP module to
+   `axi_dma_v71_logicore` (avoids collision with the shim's own name),
+   added `rtl/infra/ip/*.v` to the RTL glob, dropped the obsolete TODO
+   block, set `TOP_MODULE = tetra_synth_top`.
+
+**Test gate met (`make synth`):** exits 0; produces
+`build/vivado/tetra_bs.bit` (~4045 KiB) + `tetra_bs.bit.bin`. `make tb`
+(24 RTL TBs) and `make sw-test` (155 SW tests) still PASS unchanged.
+
+**Synth-time utilization (xc7z020clg400-1):**
+LUTs 9282/53200 = 17.45 %, FFs 15088/106400 = 14.18 %, BRAM 16/140 = 11.43 %
+(12× RAMB36 + 8× RAMB18 — IP-internal FIFOs dominate; the shim's
+descriptor rings get inferred as registers because the 256-bit-wide
+init writes overflow BRAM port width).
+
+**Caveat — bring-up baseline:** because `tetra_synth_top` terminates
+the AXI ports with always-ready stubs (no PS7 wiring yet), Vivado's
+opt_design observes that most internal nets feed dead-end stubs and
+prunes them before placement. The placed design therefore reports near-
+0 cells. The bitstream is structurally valid (write_bitstream succeeds,
+4 MiB output), but loading it on Board #1 will not exercise the DMA /
+TETRA datapath until the PS7-wiring follow-up restores observability.
+That follow-up is the natural Phase 3.6 task: instantiate a real
+`processing_system7:5.5` IP, wire its M_AXI_GP0 to the wrapper's
+S_AXI_LITE and its S_AXI_HP0/HP1 to the 4× M_AXI masters, route IRQ_F2P
+from the IRQ outputs.
 
 ### Phase 4 — Live A/B on Boards
 
