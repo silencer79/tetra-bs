@@ -485,7 +485,7 @@ sinnvoll losläuft. Reihenfolge der Locks (= "Day 0" der Phase 2):
 | 10 | `IF_TMASAP_FRAME_v1` | `A2` | `A5`, `T1`, `T2` | Byte-Layout = ARCHITECTURE.md verbatim |
 | 11 | `IF_TMDSAP_FRAME_v1` | `A3` | `A5`, `T1`, `T2` | dito |
 | 12 | `IF_UMAC_TMASAP_v1` | `A6` | `A2` | UMAC-Carry-Over-Ports nach Cleanup |
-| 13 | `IF_TETRA_TOP_v1` | `A5` | `T1`, `T2` | Top-Level-Pinout + AXI-Lite-Window |
+| 13 | `IF_TETRA_TOP_v1` | `A5` | `T1`, `T2` | Top-Level-Pinout + AXI-Lite-Window. Locked 2026-05-03: AD9361 LVDS pins (rx/tx_clk/frame/data + control) verbatim from carry-over xdc; AXI-Lite slave (12-bit addr, 32-bit data); 4× AXI4-MM master sets (m_axi_tma_{rx,tx}_*, m_axi_tmd_{rx,tx}_*); 4× IRQ outputs (irq_tma_{rx,tx}_o, irq_tmd_{rx,tx}_o); clk_axi + clk_sys + rstn_axi + rstn_sys clock/reset pair. Header comment in `rtl/tetra_top.v` is the source-of-truth. |
 
 Locks #1, #8, #9 (foundation interfaces) müssen zuerst stehen — sie blocken am
 meisten. Locks #6 + #13 sind die letzten, weil sie alle anderen aggregieren.
