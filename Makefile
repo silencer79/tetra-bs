@@ -182,6 +182,8 @@ sw-build: $(ARM_SMOKE_BIN) jansson-arm
 	@file $(ARM_SMOKE_BIN) || true
 	@$(MAKE) --no-print-directory $(ARM_DAEMON_BIN) 2>/dev/null || \
 	    echo "[sw-build] note: tetra_d link skipped (cross-jansson missing?)"
+	@echo "[sw-build] cross-building 12 CGI binaries for ARM"
+	@$(MAKE) --no-print-directory -C $(REPO_ROOT)/sw/webui ARM=1 all
 
 # ---- jansson-arm — static cross-build (idempotent) ------------------------
 # Builds libjansson.a for ARM hard-float so the daemon can statically
