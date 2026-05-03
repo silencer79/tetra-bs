@@ -54,3 +54,4 @@ Forked design knowledge from `tetra-zynq-phy` (sister project under same GitHub
 account). PHY + LMAC channel-coding modules carried over verbatim and validated
 on-air. Rest is fresh implementation against bluestation structure +
 gold-reference behavior.
+# tetra-bs
