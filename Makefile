@@ -191,10 +191,13 @@ $(ARM_DAEMON_BIN): $(ARM_DAEMON_SRC) | $(BUILD_ARM)
 	$(ARM_CC) $(ARM_CFLAGS) $(ARM_DAEMON_INC) $(ARM_JANSSON_CFLAGS) \
 	    -o $@ $(ARM_DAEMON_SRC) $(ARM_JANSSON_LIBS)
 
-# ---- cosim (T2 stub) ------------------------------------------------------
+# ---- cosim (T2) -----------------------------------------------------------
+# Forwards to tb/cosim/Makefile, which owns the Verilator harness and
+# the FALLBACK MODE banner per Decision-Table §D #3. Pass SCENARIO via
+# the make-line, e.g. `make cosim SCENARIO=group_attach`.
+SCENARIO ?= m2_attach
 cosim:
-	@echo "[cosim] T2-cosim not yet implemented"
-	@exit 0
+	@$(MAKE) --no-print-directory -C $(REPO_ROOT)/tb/cosim cosim SCENARIO=$(SCENARIO)
 
 # ---- synth (A5 stub) ------------------------------------------------------
 synth:
