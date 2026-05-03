@@ -156,6 +156,48 @@ module tetra_synth_top (
     assign pl_led1 = tt_pl_led1;
 
     // -----------------------------------------------------------------
+    // LVDS pin buffers — required by Vivado DRC IOSTDTYPE-1 because the
+    // XDC declares the rx_*_p/n + tx_*_p/n pins as LVDS_25 (differential).
+    // For the inputs we use IBUFDS to merge the pair into a single net
+    // (the inner tetra_top's PHY-RX consumes the merged signal); we then
+    // pass the same net to both _p and _n ports of tetra_top for legacy
+    // port-list compatibility (the inner module's LVDS-receive logic
+    // expects the merged single-ended representation).
+    //
+    // For the outputs (TX path is currently stubbed in tetra_top — driven
+    // to constants) we drive the pair through OBUFDS from a single
+    // internal `tt_tx_*` net derived from tetra_top's stubbed output.
+    // This satisfies the DRC without changing tetra_top's internal logic.
+    // -----------------------------------------------------------------
+    wire rx_clk_in_se, rx_frame_in_se;
+    wire [5:0] rx_data_in_se;
+
+    IBUFDS u_ibufds_rx_clk   (.O(rx_clk_in_se),   .I(rx_clk_in_p),   .IB(rx_clk_in_n));
+    IBUFDS u_ibufds_rx_frame (.O(rx_frame_in_se), .I(rx_frame_in_p), .IB(rx_frame_in_n));
+    IBUFDS u_ibufds_rx_d0 (.O(rx_data_in_se[0]), .I(rx_data_in_p[0]), .IB(rx_data_in_n[0]));
+    IBUFDS u_ibufds_rx_d1 (.O(rx_data_in_se[1]), .I(rx_data_in_p[1]), .IB(rx_data_in_n[1]));
+    IBUFDS u_ibufds_rx_d2 (.O(rx_data_in_se[2]), .I(rx_data_in_p[2]), .IB(rx_data_in_n[2]));
+    IBUFDS u_ibufds_rx_d3 (.O(rx_data_in_se[3]), .I(rx_data_in_p[3]), .IB(rx_data_in_n[3]));
+    IBUFDS u_ibufds_rx_d4 (.O(rx_data_in_se[4]), .I(rx_data_in_p[4]), .IB(rx_data_in_n[4]));
+    IBUFDS u_ibufds_rx_d5 (.O(rx_data_in_se[5]), .I(rx_data_in_p[5]), .IB(rx_data_in_n[5]));
+
+    // tetra_top will drive its _p outputs to 0 and _n to 1 (stubbed TX).
+    // We collect the _p net and feed OBUFDS — which generates the proper
+    // LVDS pair on the device pins. The _n net from tetra_top is dropped.
+    wire tt_tx_clk_p,   tt_tx_clk_n_unused;
+    wire tt_tx_frame_p, tt_tx_frame_n_unused;
+    wire [5:0] tt_tx_data_p, tt_tx_data_n_unused;
+
+    OBUFDS u_obufds_tx_clk   (.I(tt_tx_clk_p),   .O(tx_clk_out_p),   .OB(tx_clk_out_n));
+    OBUFDS u_obufds_tx_frame (.I(tt_tx_frame_p), .O(tx_frame_out_p), .OB(tx_frame_out_n));
+    OBUFDS u_obufds_tx_d0 (.I(tt_tx_data_p[0]), .O(tx_data_out_p[0]), .OB(tx_data_out_n[0]));
+    OBUFDS u_obufds_tx_d1 (.I(tt_tx_data_p[1]), .O(tx_data_out_p[1]), .OB(tx_data_out_n[1]));
+    OBUFDS u_obufds_tx_d2 (.I(tt_tx_data_p[2]), .O(tx_data_out_p[2]), .OB(tx_data_out_n[2]));
+    OBUFDS u_obufds_tx_d3 (.I(tt_tx_data_p[3]), .O(tx_data_out_p[3]), .OB(tx_data_out_n[3]));
+    OBUFDS u_obufds_tx_d4 (.I(tt_tx_data_p[4]), .O(tx_data_out_p[4]), .OB(tx_data_out_n[4]));
+    OBUFDS u_obufds_tx_d5 (.I(tt_tx_data_p[5]), .O(tx_data_out_p[5]), .OB(tx_data_out_n[5]));
+
+    // -----------------------------------------------------------------
     // tetra_top instance — full DUT.
     // -----------------------------------------------------------------
     tetra_top u_tetra (
@@ -164,18 +206,21 @@ module tetra_synth_top (
         .clk_sys              (clk_sys),
         .rstn_sys             (rstn_sys),
 
-        .rx_clk_in_p          (rx_clk_in_p),
-        .rx_clk_in_n          (rx_clk_in_n),
-        .rx_frame_in_p        (rx_frame_in_p),
-        .rx_frame_in_n        (rx_frame_in_n),
-        .rx_data_in_p         (rx_data_in_p),
-        .rx_data_in_n         (rx_data_in_n),
-        .tx_clk_out_p         (tx_clk_out_p),
-        .tx_clk_out_n         (tx_clk_out_n),
-        .tx_frame_out_p       (tx_frame_out_p),
-        .tx_frame_out_n       (tx_frame_out_n),
-        .tx_data_out_p        (tx_data_out_p),
-        .tx_data_out_n        (tx_data_out_n),
+        // RX LVDS — drive both _p and _n from the single-ended IBUFDS
+        // output. tetra_top consumes `rx_clk_in_p` (it is the merged
+        // representation in its current TB-friendly stub).
+        .rx_clk_in_p          (rx_clk_in_se),
+        .rx_clk_in_n          (1'b0),
+        .rx_frame_in_p        (rx_frame_in_se),
+        .rx_frame_in_n        (1'b0),
+        .rx_data_in_p         (rx_data_in_se),
+        .rx_data_in_n         (6'b000000),
+        .tx_clk_out_p         (tt_tx_clk_p),
+        .tx_clk_out_n         (tt_tx_clk_n_unused),
+        .tx_frame_out_p       (tt_tx_frame_p),
+        .tx_frame_out_n       (tt_tx_frame_n_unused),
+        .tx_data_out_p        (tt_tx_data_p),
+        .tx_data_out_n        (tt_tx_data_n_unused),
 
         .enable               (enable),
         .txnrx                (txnrx),
