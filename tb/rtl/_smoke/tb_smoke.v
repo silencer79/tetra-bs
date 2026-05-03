@@ -11,6 +11,20 @@
 
 module tb_smoke;
 
+    // ---- T1: optional VCD dump (compile with -DVCDDUMP to enable) ---------
+    // Placed before the main initial so $dumpfile/$dumpvars run before the
+    // test's $finish; a few VCD tools refuse zero-tick traces.
+`ifdef VCDDUMP
+    initial begin
+`ifdef VCD_FILE
+        $dumpfile(`VCD_FILE);
+`else
+        $dumpfile("dump.vcd");
+`endif
+        $dumpvars(0, tb_smoke);
+    end
+`endif
+
     initial begin
         // Trivial sanity check; if the simulator can't evaluate this,
         // the toolchain is broken and the whole pipeline is wrong.
