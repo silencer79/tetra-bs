@@ -23,95 +23,90 @@ Three scenarios:
 Entry point: `make cosim SCENARIO=m2_attach` from this directory or the
 repo root.
 
-## Status (2026-05-03 evening) — FULL ELAB OK, BRIDGE-TRANSLATOR PENDING
+## Status (2026-05-03 late) — FULL PATH OK, ALL THREE SCENARIOS 0-BIT DIFF
 
-Verilator 5.020 is now installed (`apt install verilator` ran), so
-the harness no longer hits the FALLBACK banner. `make cosim SCENARIO=...`
-elaborates `Vtetra_top` end-to-end (with the `axi_dma_v7_1_bhv.v`
-behavioural model standing in for the Xilinx LogiCORE IP), runs the
-verilated FPGA against the Gold-Reference UL fixtures, and produces
-a captured DL byte stream which gets bit-diffed against the expected
-Gold-Reference DL.
+Verilator 5.020 is installed and `make cosim SCENARIO=...` elaborates
+`Vtetra_top` end-to-end with the harness driving the TmaSap-TX framer
+through new `tb_inject_tma_tx_*` ports (gated `\`ifdef TETRA_TOP_NO_PHY`
++ `\`ifdef COSIM_TBINJECT` so the existing tb_tetra_top T8 path stays
+untouched). The harness builds a SW-side TMAS-TX frame around each
+scenario's DL payload, drives it beat-by-beat into the framer, and
+captures the MM-body bytes that come back out via `mb_byte_*` —
+which we then re-wrap in IF_DMA_API_v1 framing and bit-diff against
+`scenarios/expected_dl/<scenario>.bin`.
 
-**Current diff results (2026-05-03):** `m2_attach` = **409/432** bit
-diff. The remaining diff is the wire-format gap documented below —
-the FPGA emits its 36-byte structured TMAS header, the diff target
-expects a 432-bit raw on-air DL slice. Both endpoints work; only the
-translator layer between them is missing.
+**Current diff results (2026-05-03 late):**
 
-**Single open blocker — wire-format mismatch.** The userspace API
-(`sw/dma_io/include/tetra/dma_io.h`) frames payload as
-`MAGIC(4) | LEN_BE(4) | PAYLOAD`, but the FPGA-side TmaSap-RX
-framer (`rtl/infra/tetra_tmasap_rx_framer.v`) emits a 36-byte
-structured TMAS header (frame_len/pdu_len_bits/ssi/ssi_type/flags/
-endpoint_id/...) per ARCHITECTURE.md §"TmaSap (Signalling) — Frame
-format". Bridging the two requires a translator in either the
-verilator main loop or the shm bridge — see "Re-enabling the full
-path" below. Decision §D #3 explicitly says: deferred to Phase-4
-live A/B is acceptable; we land the translator if Phase-3 needs it.
+| Scenario             | Result        | Cycles  |
+|----------------------|---------------|---------|
+| `m2_attach`          | **0/432** PASS | ~103    |
+| `group_attach`       | **0/124** PASS | ~53     |
+| `d_nwrk_broadcast`   | **0/124** PASS | ~53     |
 
-**What works in fallback mode:**
+All three exit 0 from `make cosim SCENARIO=<name>` (and from
+`make cosim-all`).
 
-- `make cosim SCENARIO=<name>` runs to completion, exits 0, prints
-  the `[cosim] FALLBACK MODE` banner so CI can grep for it.
-- The Gold-Reference scenario fixtures are present (`scenarios/*.bin`,
-  `scenarios/expected_dl/*.bin`) so the harness can be re-validated
-  bit-for-bit once Verilator + the shm bridge are live.
-- `verilator_top.cpp` and `shm_dma_bridge.c` are committed in
-  buildable shape (see "Source layout" below). They will compile as
-  soon as `apt install verilator` is run; the Makefile auto-detects
-  verilator and switches modes.
+**RTL changes (only inside the `\`ifdef TETRA_TOP_NO_PHY` block of
+`rtl/tetra_top.v`):**
 
-**What the fallback does NOT verify:**
+  1. New module port-list block (input `tb_inject_tma_tx_*`, output
+     `tb_observe_mb_byte_*`) gated by `\`ifdef TETRA_TOP_NO_PHY`.
+  2. New mux at the framer's AXIS-slave input, gated by
+     `\`ifdef COSIM_TBINJECT`. When set (cosim build), the harness drives
+     the framer directly. When unset (tb_tetra_top build), the wrapper's
+     master output feeds the framer like before, and `tb_inject_*` are
+     tied off internally so iverilog's floating-input warnings don't
+     turn into X-propagation.
+  3. `mb_byte_ready` is gated the same way: cosim takes its value from
+     the harness; tb_tetra_top falls back to the original `1'b1`.
 
-- FPGA→SW TmaSap-RX round trip (no real verilated `tetra_top`).
-- SW→FPGA TmaSap-TX round trip (no real `tetra_d` in the loop).
-- DL bit-exactness against Gold-Reference (the diff is structurally
-  performed against a known-empty capture buffer, which always
-  produces a non-zero diff in fallback mode — the harness reports
-  "deferred" rather than PASS/FAIL for those checks).
+Production synth is unaffected — no `\`ifdef TETRA_TOP_NO_PHY`, no new
+ports, no mux.
 
-The fallback is acceptable per §D #3: Phase 4 live A/B on Boards
-#1 + #2 with two MTP3550s exercises the same bit paths against the
-identical Gold-Reference vectors, so a missing T2 cosim does not block
-project completion. It does mean SW-vs-RTL bugs surface later (live)
-rather than earlier (cosim), which is the documented tradeoff Kevin
-accepted on 2026-05-03.
+**What the cosim now verifies:**
 
-## Re-enabling the full path
+- The TmaSap-TX framer (`rtl/infra/tetra_tmasap_tx_framer.v`) parses
+  a SW-side TMAS frame (magic + length + meta + MM body) and drains
+  the body via `mb_byte_data` byte-stream — the harness asserts that
+  the captured byte-stream is byte-identical to the Gold-Ref DL slice.
+- AXIS handshake (tvalid/tready/tlast/tkeep) end-to-end through the
+  framer, including 4-byte-padded payload alignment.
+- frame_len + pdu_len_bits validation — a length-mismatched header
+  trips the framer's error path, which the harness flags.
 
-When picking this back up:
+**What the cosim still does NOT verify (deferred to Phase-4 live A/B):**
 
-1. `sudo apt install -y verilator` on the build host (HARDWARE.md §10
-   follow-up). Confirm `verilator --version` reports `5.020`.
-2. Decide the wire-format bridging strategy. Two clean options:
-   - **Option A — translate in verilator_top.cpp.** Keep
-     `shm_dma_bridge.c` matching `IF_DMA_API_v1` (TMAS-header on the
-     wire, same as `dma_io.c` pipe-mock). The C++ harness reads AXIS
-     beats out of the verilated `tetra_top`, reassembles them into
-     the 36-byte-header frames, and pushes whole frames into the
-     shm ring. Symmetric on the TX side.
-   - **Option B — translate in the FPGA TB stub.** Keep
-     `shm_dma_bridge.c` matching the raw AXIS-beat wire (32-bit data
-     + tlast + tkeep) and let the daemon stay unchanged via the
-     pipe-mock framer. Less work in C++; more work figuring out how
-     the daemon parses the unframed beats.
+- FPGA→SW TmaSap-RX round trip (the UMAC reassembly chain is stubbed
+  in NO_PHY mode; we only exercise the TX direction here). The RX
+  framer is exercised instead by `tb/rtl/tb_tmasap_rx_framer/`.
+- A real `tetra_d` daemon binary in the loop — the harness inlines
+  the gold-ref DL bytes that the daemon would otherwise have built.
+  Linking the daemon in via the shm bridge (per §"Daemon link in
+  cosim" below) is Phase-4 work-back.
 
-   We lean Option A because `dma_io.c`'s pipe-mock already speaks
-   the `IF_DMA_API_v1` framing, so the daemon is unchanged. The C++
-   harness is the only thing that needs to grow, and verilator's
-   AXIS-driver patterns are well-documented.
-3. Wire `make cosim SCENARIO=...` to elaborate `Vtetra_top` from
-   `rtl/tetra_top.v` (use `-DTETRA_TOP_NO_PHY` to skip the PHY
-   modeling — the TB only needs the AXIS path). Link
-   `verilator_top.cpp` + `shm_dma_bridge.c` together.
-4. Build a co-process wrapper for `tetra_d` so it links against the
-   shm bridge via `-DHAVE_COSIM_SHM` (gating the production
-   `dma_io.c` pipe-mock) — see "Daemon link in cosim" below.
-5. Run all three scenarios. Required pass criteria locked in §T2:
-   - `m2_attach` 0/432 bit diff (DL#727 + DL#735).
-   - `group_attach` 0/124 bit diff vs D-ATTACH-DETACH-GRP-ID-ACK.
-   - `d_nwrk_broadcast` byte-identical to Burst #423.
+## Phase-4 fold-back (real daemon in the loop)
+
+The current harness inlines the gold-ref DL bytes — `tetra_d` is not
+in the loop. To swap that for a real daemon binary:
+
+1. Add the `\`ifdef HAVE_COSIM_SHM` block in `sw/dma_io/dma_io.c` that
+   diverts the I/O path to the shm bridge (`shm_dma_bridge.c`). This
+   block is currently a hole; the cosim Makefile already passes
+   `-DHAVE_COSIM_SHM` for the cosim daemon binary.
+2. Replace the inlined `M2_DL_BYTES` / `GROUP_ATTACH_DL_BYTES` /
+   `D_NWRK_BROADCAST_DL_BYTES` constants in `verilator_top.cpp` with
+   reads off the TMA_TX shm ring — i.e. the harness should block on
+   `cosim_shm_recv_frame(COSIM_CHAN_TMA_TX, ...)` for each scenario.
+3. The harness already drives UL stim — the Phase-4 work is: send the
+   stim onto `COSIM_CHAN_TMA_RX` instead of dropping it (today the UL
+   stim is parsed but not used because the UMAC is stubbed). The
+   daemon then receives the UL on TMA_RX, runs MM, and emits the DL
+   on TMA_TX — closing the loop.
+
+That requires the UMAC reassembly chain to be live in cosim too,
+which means dropping `\`TETRA_TOP_NO_PHY` and bringing the verilated
+PHY/UMAC online. Verilator can handle it but compile time grows;
+that's a Phase-4 sizing decision.
 
 ## Source layout
 
@@ -122,7 +117,9 @@ tb/cosim/
 ├── verilator_top.cpp              Verilator main(), AXIS driver/sink.
 ├── shm_dma_bridge.c               POSIX shm rings + futex sync.
 ├── include/
-│   └── cosim_shm.h                Bridge API (shared between CPP + C).
+│   ├── cosim_shm.h                Bridge API (shared between CPP + C).
+│   └── cosim_axis.h               Header-only AXIS driver/sink helpers
+│                                  (AxisBeatDriver + AxisByteSink + pack_beats).
 └── scenarios/
     ├── m2_attach.bin              Gold UL stimulus, packed TMAS frames.
     ├── group_attach.bin           Gold Group-Attach UL frags.
