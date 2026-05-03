@@ -581,6 +581,17 @@ Vier Sync-Points zwischen Phase-2-Start und Phase-4-Live-A/B:
   (Gold-Ref-Bit-Vektor sagt wer Recht hat, FPGA oder SW).
 - Live-A/B hängt → Cold-Rollback laut MIGRATION_PLAN.md §"Rollback Strategy".
 
+### D. Pre-Phase-2 Architektur-Entscheidungen (Kevin, 2026-05-03)
+
+Drei offene Punkte aus den Agent-Topology-Reports wurden vor Phase-2-Start
+mit Kevin entschieden:
+
+| # | Frage | Entscheidung | Konsequenz |
+|---|---|---|---|
+| 1 | `libaxidma`-Strategie | **Option B** — Jacob Feder `xilinx_axidma` (MIT) vendored unter `sw/external/xilinx_axidma/` at pinned commit, Kernel-Modul rebuild gegen Board-Kernel 5.10. | S1-Agent (`S1-sw-dma-glue`) baut C-Glue-Layer um `libaxidma.so`. HARDWARE.md §10 follow-up `libaxidma` jetzt geschlossen. |
+| 2 | AXI-Register-Window-Naming für `tetra_top.v` | **Sofortiger Spec-Pass** in `docs/ARCHITECTURE.md` vor A5-Start. Eigener Pre-Phase-2-Agent legt das Register-Window fest (Adressen + Namen + Bit-Felder + Reset-Defaults). | Schließt die 12 `<!-- TODO: confirm reg name -->` Marker in `OPERATIONS.md §4`. A5 + S6 + S7 referenzieren benannte Register von Tag 0. |
+| 3 | Verilator+libaxidma shm-DMA-Bridge für T2-Cosim | **Bundle in T2-Scope** — kein eigener Pre-Spike. Falls Bridge scheitert, fallback auf Verilator-only-TB ohne C-Daemon-Loop, Phase-4-Live-A/B fängt das auf. | T2-Agent-Vertrag erweitert um Risk-Note + Fallback. Kein Schedule-Impact wenn Bridge klappt. |
+
 ---
 
 ## Migration Phases

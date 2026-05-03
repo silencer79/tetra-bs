@@ -115,8 +115,9 @@ Three viable userspace strategies, in increasing complexity:
 | **B. Jacob Feder `libaxidma`** | char-dev kernel module (`xilinx_axidma`) + userspace `libaxidma.so` | clean userspace API, supports SG, MIT-licensed, well-trodden in Zynq SDR community | 3rd-party out-of-tree kernel module to track per-kernel-version |
 | **C. Linux DMAengine + `dmabuf`** | upstream `xilinx_dma` (already on board), userspace via `/dev/dma_heap` + ioctl glue | uses in-kernel driver only | requires writing a thin char-dev shim; `/dev/dma_heap` enablement on this kernel not yet verified |
 
-**Decision needed.** Default proposal: **Option B (Jacob Feder libaxidma,
-<https://github.com/jacobfeder/xilinx_axidma>)**, because (a) the board already
+**Decision (Kevin, 2026-05-03):** **Option B locked.** Jacob Feder `libaxidma`
+(<https://github.com/jacobfeder/xilinx_axidma>) wird unter `sw/external/xilinx_axidma/`
+at pinned commit gevendord. Begründung: (a) the board already
 hosts an out-of-tree kernel module workflow, (b) library has the cleanest
 4-channel multi-instance support, (c) MIT license is compatible with our GPL-2.0.
 Vendor in `sw/external/xilinx_axidma/` at a pinned commit; rebuild
@@ -192,7 +193,7 @@ Recorded explicitly to avoid re-litigation:
 
 ### 10. Open follow-ups out of this audit
 
-- [ ] Pin `libaxidma` strategy (Section 4) — needs Kevin's call before Phase 2.
+- [x] Pin `libaxidma` strategy (Section 4) — Option B (Jacob Feder vendored), 2026-05-03.
 - [ ] `apt install verilator` on host before Phase 3 co-sim work begins.
 - [ ] `apt install libjansson-dev` on host before first SW build (only runtime
       `libjansson4` is on the host today; headers + `.pc` are missing).
