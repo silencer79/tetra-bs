@@ -43,92 +43,30 @@ if {[file exists $XPR_PATH]} {
 set_property target_language Verilog [current_project]
 set_property default_lib work [current_project]
 
-# ---- Xilinx LogiCORE IP : axi_dma:7.1 (4× channels) ----------------------
-# `rtl/infra/tetra_axi_dma_wrapper.v` instantiates `axi_dma_channel_inst` 4×.
-# In simulation, that name resolves to the behavioural model at
-# `tb/rtl/models/axi_dma_v7_1_bhv.v`. For synth, we materialise a real
-# Xilinx LogiCORE `axi_dma:7.1` IP and rename its top module to
-# `axi_dma_channel_inst` so the wrapper picks it up.
+# ---- Xilinx LogiCORE IP : axi_dma:7.1 (1× shared by all 4 channels) ------
+# `rtl/infra/tetra_axi_dma_wrapper.v` instantiates `axi_dma_channel_inst` 4×
+# with a *slim* port-list + custom parameters (`CHANNEL_ID`, `DIR_IS_S2MM`,
+# AXIS_TDATA_W, MM_ADDR_W, ...). That slim shape is satisfied by:
+#   - In simulation: the behavioural model `tb/rtl/models/axi_dma_v7_1_bhv.v`.
+#   - In synthesis : the shim `rtl/infra/ip/axi_dma_channel_inst.v` which
+#                    bridges the slim shape to the real LogiCORE port-list
+#                    (full burst signalling, S_AXI_LITE control slave,
+#                    M_AXI_SG/MM2S/S2MM masters, mm2s/s2mm_introut, etc.).
 #
-# IP config mirrors carry-over `tetra_system_axi_dma_0_0.xci`:
-#   c_include_sg            = 1   (Scatter-Gather enabled)
-#   c_include_s2mm          = 1
-#   c_include_s2mm_dre      = 1
-#   c_include_mm2s          = 1   (carry-over had 0; we enable both
-#                                  directions because the wrapper's
-#                                  per-channel DIR_IS_S2MM toggles
-#                                  S2MM-only vs MM2S-only at the wrapper
-#                                  level, NOT inside the IP)
-#   c_addr_width            = 32  (PS-DDR HP slave geometry)
-#   c_m_axi_s2mm_data_width = 32
-#   c_s_axis_s2mm_tdata_width = 32
-#   c_m_axi_mm2s_data_width = 32
-#   c_m_axis_mm2s_tdata_width = 32
-#   c_sg_length_width       = 14  (carry-over default)
-#   c_s2mm_burst_size       = 256 (carry-over user value)
+# The shim instantiates the real IP under the name `axi_dma_v71_logicore`
+# (renamed via `-module_name`). That avoids collision with the shim's
+# own module name `axi_dma_channel_inst`.
 #
-# =============================================================================
-# TODO(synth-ip-bringup, 2026-05-03): synth currently FAILS at this point
-# with the following Vivado error (captured at
-# build/vivado/reports/synth_failure.log line ~80):
+# IP config mirrors the carry-over `tetra_system_axi_dma_0_0.xci` with
+# both directions enabled — see HARDWARE.md §1.
 #
-#   ERROR: [Synth 8-7136] In the module 'axi_dma_channel_inst' declared at
-#     '<build>/.Xil/Vivado-XXXX/realtime/axi_dma_channel_inst_stub.v:5',
-#     parameter 'CHANNEL_ID' used as named parameter override, does not exist
-#     [/home/kevin/claude-ralph/tetra-bs/rtl/infra/tetra_axi_dma_wrapper.v:400]
-#   ERROR: [Synth 8-6156] failed synthesizing module 'tetra_axi_dma_wrapper'
-#   ERROR: [Synth 8-6156] failed synthesizing module 'tetra_top'
-#
-# Root cause: the wrapper at `rtl/infra/tetra_axi_dma_wrapper.v:399..580`
-# instantiates `axi_dma_channel_inst` four times with a *slim*, custom
-# port-list and parameter set:
-#
-#     axi_dma_channel_inst #(
-#         .CHANNEL_ID    (0..3),
-#         .DIR_IS_S2MM   (0/1),
-#         .AXIS_TDATA_W  (32), .AXIS_TKEEP_W (4),
-#         .MM_ADDR_W     (32), .MM_DATA_W    (32)
-#     ) u_chN_* ( ... slim AXIS s/m + slim AXI4-MM r/w + irq_done + ... );
-#
-# That signature is satisfied by the simulation behavioural model
-# (`tb/rtl/models/axi_dma_v7_1_bhv.v`) but NOT by the real Xilinx
-# `axi_dma:7.1` IP, which exposes the full LogiCORE port-list (separate
-# AXI-Lite control slave, full burst signals AWLEN/AWBURST/AWCACHE/
-# AWPROT/AWUSER/AWQOS/AWREGION, separate SG read+write masters,
-# mm2s_introut/s2mm_introut, etc.) and accepts NO `CHANNEL_ID` /
-# `DIR_IS_S2MM` parameters.
-#
-# Resolution requires a synthesis-only RTL shim — a new file something
-# like `rtl/infra/ip/axi_dma_channel_inst.v` — that:
-#   1. Exposes the slim port/param shape the wrapper expects (so the
-#      bhv-model path keeps working unchanged for sim).
-#   2. Internally instantiates the real `axi_dma_channel_inst_ip` IP
-#      (renamed via `create_ip -module_name axi_dma_channel_inst_ip`,
-#      NOT `axi_dma_channel_inst` as we tried — that collides).
-#   3. Drives sensible AXI-Lite control defaults so the wrapper's slim
-#      AXI-Lite is unused, OR fans-in the wrapper's tiny sub-window into
-#      the IP's S_AXI_LITE control register block.
-#   4. Tied-off / aggregated SG, AXI-burst, IRQ side-band per
-#      DIR_IS_S2MM.
-#
-# That shim is ~200 LOC of plumbing and is OUT OF SCOPE for this task
-# (which is forbidden from modifying rtl/* and capped at 90 minutes).
-# It is the natural follow-up: a new "A1.b" sub-task under MIGRATION_PLAN.md
-# §A1 deliverable "Vivado-IP-Tcl `rtl/infra/ip/axi_dma_*.tcl` (4×)"
-# (line 203) — that line should be revised to also include
-# `rtl/infra/ip/axi_dma_channel_inst.v` (the shim) since IP-Tcl alone
-# cannot bridge the port-list mismatch.
-#
-# Until that shim lands, `make synth` exits 1 at synth_design. The IP
-# itself IS created correctly under build/vivado/tetra_bs.gen/sources_1/
-# ip/axi_dma_channel_inst/ and its OOC-synth run completes — only the
-# top-level synth_design step fails when elaborating the wrapper.
-#
-# Repro:  `make synth`  → synth_failure.log line ~80 (Synth 8-7136).
-# =============================================================================
-puts "\[synth\] creating axi_dma:7.1 IP (renamed -> axi_dma_channel_inst)"
+# Decision (Kevin, 2026-05-03 evening): SG-mode (Option B in MIGRATION_PLAN.md
+# §"Phase 3.5"). The shim manages a per-direction descriptor ring in BRAM
+# and intercepts the IP's M_AXI_SG bus locally, so descriptors do NOT round-
+# trip through PS-DDR. The slim outward AXI4-MM port carries data only.
+puts "\[synth\] creating axi_dma:7.1 IP (renamed -> axi_dma_v71_logicore)"
 create_ip -name axi_dma -vendor xilinx.com -library ip -version 7.1 \
-          -module_name axi_dma_channel_inst
+          -module_name axi_dma_v71_logicore
 set_property -dict [list \
     CONFIG.c_include_sg              {1} \
     CONFIG.c_sg_length_width         {14} \
@@ -148,14 +86,14 @@ set_property -dict [list \
     CONFIG.c_micro_dma               {0} \
     CONFIG.c_enable_multi_channel    {0} \
     CONFIG.c_increase_throughput     {0} \
-] [get_ips axi_dma_channel_inst]
+] [get_ips axi_dma_v71_logicore]
 
 # Generate the IP's output products targeting synthesis/simulation; this
 # materialises the synthesisable wrapper Verilog under
-# build/vivado/${PROJ_NAME}.gen/sources_1/ip/axi_dma_channel_inst/.
-generate_target {synthesis simulation} [get_ips axi_dma_channel_inst]
+# build/vivado/${PROJ_NAME}.gen/sources_1/ip/axi_dma_v71_logicore/.
+generate_target {synthesis simulation} [get_ips axi_dma_v71_logicore]
 # OOC synth produces a checkpoint that's faster + more isolated.
-catch { create_ip_run [get_ips axi_dma_channel_inst] }
+catch { create_ip_run [get_ips axi_dma_v71_logicore] }
 
 # ---- RTL Sources ---------------------------------------------------------
 # Every *.v under rtl/ EXCEPT rtl/_retired/. The retired path holds
@@ -171,6 +109,7 @@ catch { create_ip_run [get_ips axi_dma_channel_inst] }
 set RTL_FILES [list]
 foreach f [glob -nocomplain "$REPO_ROOT/rtl/*.v" \
                             "$REPO_ROOT/rtl/infra/*.v" \
+                            "$REPO_ROOT/rtl/infra/ip/*.v" \
                             "$REPO_ROOT/rtl/infra/cdc/*.v" \
                             "$REPO_ROOT/rtl/lmac/*.v" \
                             "$REPO_ROOT/rtl/umac/*.v" \
