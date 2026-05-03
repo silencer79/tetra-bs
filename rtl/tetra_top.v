@@ -182,6 +182,33 @@ module tetra_top (
     output wire        irq_tma_tx_o,
     output wire        irq_tmd_rx_o,
     output wire        irq_tmd_tx_o
+`ifdef TETRA_TOP_NO_PHY
+    // ---- TB injection / observation ports (only present in TB build) ----
+    // Owned by Agent T2 (T2-cosim-verilator). Exposed inside
+    // `ifdef TETRA_TOP_NO_PHY so production synth never sees them.
+    //
+    // Injection: drive `tetra_tmasap_tx_framer.s_axis_*` directly from
+    // the harness, bypassing the AXI-DMA wrapper master path that has
+    // no PS DDR backing in cosim. The wrapper's m_axis_tma_tx_* output
+    // is left dangling in NO_PHY mode (the wrapper instance still
+    // exists for AXI-MM telemetry parity).
+    //
+    // Observation: mirror the framer's per-byte MM-body output so the
+    // C++ harness can capture the bit-exact DL bytes after the framer
+    // has parsed the SW-side TMAS header.
+    ,
+    input  wire [31:0] tb_inject_tma_tx_tdata,
+    input  wire        tb_inject_tma_tx_tvalid,
+    output wire        tb_inject_tma_tx_tready,
+    input  wire        tb_inject_tma_tx_tlast,
+    input  wire [3:0]  tb_inject_tma_tx_tkeep,
+    output wire [7:0]  tb_observe_mb_byte_data,
+    output wire        tb_observe_mb_byte_valid,
+    input  wire        tb_observe_mb_byte_ready,
+    output wire        tb_observe_mb_frame_start_pulse,
+    output wire        tb_observe_mb_frame_end_pulse,
+    output wire        tb_observe_mb_frame_error_pulse
+`endif
 );
 
     // -----------------------------------------------------------------
@@ -660,15 +687,64 @@ module tetra_top (
     wire        mb_frame_end_pulse;
     wire        mb_frame_error_pulse;
 
+    // -----------------------------------------------------------------
+    // TmaSap-TX framer input mux. In production the wrapper's master
+    // output drives this directly. In TB (NO_PHY) the harness drives
+    // it via tb_inject_tma_tx_*; the wrapper's master output is left
+    // dangling because there is no PS DDR backing the AXI4-MM read.
+    // -----------------------------------------------------------------
+    wire [31:0] tma_tx_in_tdata;
+    wire        tma_tx_in_tvalid;
+    wire        tma_tx_in_tlast;
+    wire [3:0]  tma_tx_in_tkeep;
+    wire        tma_tx_in_tready;
+`ifdef TETRA_TOP_NO_PHY
+    // Cosim selector: when COSIM_TBINJECT is defined (set only by the
+    // cosim Makefile under tb/cosim/), the framer's input is driven by
+    // the C++ harness via tb_inject_*. Otherwise (the tb_tetra_top
+    // iverilog path), the wrapper's m_axis_tma_tx_* output flows through
+    // and tb_inject_* are tied off internally — this matters because
+    // tb_tetra_top instantiates the DUT without driving the new ports
+    // and iverilog leaves them floating (Z), which would taint a naive
+    // OR-mux with X.
+  `ifdef COSIM_TBINJECT
+    assign tma_tx_in_tdata          = tb_inject_tma_tx_tdata;
+    assign tma_tx_in_tvalid         = tb_inject_tma_tx_tvalid;
+    assign tma_tx_in_tlast          = tb_inject_tma_tx_tlast;
+    assign tma_tx_in_tkeep          = tb_inject_tma_tx_tkeep;
+    assign tb_inject_tma_tx_tready  = tma_tx_in_tready;
+    // wrapper output drives axis_tma_tx_*; pull tready high so its
+    // (vacant) MM2S FSM never blocks. In cosim there is no PS DDR
+    // backing so the wrapper never emits a valid beat anyway.
+    assign axis_tma_tx_tready       = 1'b1;
+  `else
+    assign tma_tx_in_tdata          = axis_tma_tx_tdata;
+    assign tma_tx_in_tvalid         = axis_tma_tx_tvalid;
+    assign tma_tx_in_tlast          = axis_tma_tx_tlast;
+    assign tma_tx_in_tkeep          = axis_tma_tx_tkeep;
+    assign axis_tma_tx_tready       = tma_tx_in_tready;
+    // tb_inject_* are unused on this path; drive tready low so a
+    // floating consumer sees a stable constant.
+    assign tb_inject_tma_tx_tready  = 1'b0;
+  `endif
+`else
+    assign tma_tx_in_tdata  = axis_tma_tx_tdata;
+    assign tma_tx_in_tvalid = axis_tma_tx_tvalid;
+    assign tma_tx_in_tlast  = axis_tma_tx_tlast;
+    assign tma_tx_in_tkeep  = axis_tma_tx_tkeep;
+    // Production: framer's tready feeds back into the wrapper.
+    assign axis_tma_tx_tready = tma_tx_in_tready;
+`endif
+
     tetra_tmasap_tx_framer u_tma_tx_framer (
         .clk                       (clk_axi),
         .rst_n                     (rstn_axi),
 
-        .s_axis_tdata              (axis_tma_tx_tdata),
-        .s_axis_tvalid             (axis_tma_tx_tvalid),
-        .s_axis_tready             (axis_tma_tx_tready),
-        .s_axis_tlast              (axis_tma_tx_tlast),
-        .s_axis_tkeep              (axis_tma_tx_tkeep),
+        .s_axis_tdata              (tma_tx_in_tdata),
+        .s_axis_tvalid             (tma_tx_in_tvalid),
+        .s_axis_tready             (tma_tx_in_tready),
+        .s_axis_tlast              (tma_tx_in_tlast),
+        .s_axis_tkeep              (tma_tx_in_tkeep),
 
         .mb_pdu_len_bits           (mb_pdu_len_bits),
         .mb_ssi                    (mb_ssi),
@@ -755,10 +831,22 @@ module tetra_top (
     assign tmd_rx_nub_valid = tmd_tx_nub_valid;
     assign tmd_tx_nub_ready = tmd_rx_nub_ready;
 
-    // Byte-stream from TmaSap-TX framer is consumed (sink) — no UMAC
-    // builder in the no-PHY build. mb_byte_ready always HIGH so the
-    // framer drains its frame.
-    assign mb_byte_ready = 1'b1;
+    // Byte-stream from TmaSap-TX framer in NO_PHY mode: routed out to
+    // the C++ harness via tb_observe_* ports so the harness can capture
+    // MM-body bytes bit-exactly. The harness drives tb_observe_mb_byte_ready
+    // and we forward it back into the framer (cosim path). In the
+    // tb_tetra_top iverilog path the harness is absent, so we keep the
+    // byte-stream sink behaviour (mb_byte_ready=1) the original code had.
+  `ifdef COSIM_TBINJECT
+    assign mb_byte_ready                      = tb_observe_mb_byte_ready;
+  `else
+    assign mb_byte_ready                      = 1'b1;
+  `endif
+    assign tb_observe_mb_byte_data            = mb_byte_data;
+    assign tb_observe_mb_byte_valid           = mb_byte_valid;
+    assign tb_observe_mb_frame_start_pulse    = mb_frame_start_pulse;
+    assign tb_observe_mb_frame_end_pulse      = mb_frame_end_pulse;
+    assign tb_observe_mb_frame_error_pulse    = mb_frame_error_pulse;
 
     // Tie remaining telemetry inputs to 0.
     assign tlm_umac_dlq_depth = 8'd0;
