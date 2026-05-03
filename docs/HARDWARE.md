@@ -44,6 +44,46 @@ hosts or reflashing the board SD card.
 drift in the carry-over project. Do not bump until the full RTL+TB suite has
 been re-validated under the new tools.
 
+**`axi_dma:7.1` IP config — locked.** Pinned in `scripts/build/synth.tcl`
+via `create_ip` + `set_property -dict CONFIG.*`. Mirrors the carry-over
+`tetra/build/vivado/.../tetra_system_axi_dma_0_0.xci` with both directions
+enabled (the wrapper drives `DIR_IS_S2MM` per channel; same IP variant
+serves all 4 instances):
+
+| Param | Value | Notes |
+|---|---|---|
+| `c_include_sg` | 1 | Scatter-Gather enabled |
+| `c_sg_length_width` | 14 | carry-over default |
+| `c_sg_include_stscntrl_strm` | 1 | status/control SG stream |
+| `c_include_mm2s` | 1 | both directions per IP — direction selected per-channel by wrapper |
+| `c_include_mm2s_dre` | 0 | MM2S unaligned DRE off |
+| `c_include_mm2s_sf` | 1 | MM2S store-and-forward |
+| `c_m_axi_mm2s_data_width` | 32 | PS-DDR HP slave geometry |
+| `c_m_axis_mm2s_tdata_width` | 32 | matches IF_AXIDMA_v1 fabric width |
+| `c_include_s2mm` | 1 | |
+| `c_include_s2mm_dre` | 1 | S2MM unaligned DRE on (carry-over) |
+| `c_include_s2mm_sf` | 1 | S2MM store-and-forward |
+| `c_m_axi_s2mm_data_width` | 32 | |
+| `c_s_axis_s2mm_tdata_width` | 32 | |
+| `c_s2mm_burst_size` | 256 | carry-over user value |
+| `c_addr_width` | 32 | |
+| `c_micro_dma` | 0 | |
+| `c_enable_multi_channel` | 0 | |
+| `c_increase_throughput` | 0 | |
+
+**Status (2026-05-03, branch `feat/synth-ip-bringup`):** IP creation works,
+OOC synth of the IP itself completes; top-level `synth_design` of
+`tetra_top` currently FAILS at `tetra_axi_dma_wrapper` elaboration because
+the wrapper's per-channel `axi_dma_channel_inst` instantiation uses a
+slim, custom port-list/parameter shape (`CHANNEL_ID`, `DIR_IS_S2MM`,
+slim AXIS+AXI4-MM only) that matches the simulation behavioural model at
+`tb/rtl/models/axi_dma_v7_1_bhv.v` but NOT the real Xilinx IP's full
+port-list (S_AXI_LITE control slave, full burst signals, separate SG
+master, mm2s/s2mm_introut, etc.). A synthesis-only RTL shim under
+`rtl/infra/ip/axi_dma_channel_inst.v` is required to bridge the two —
+that shim is the natural follow-up to A1 (see TODO in
+`scripts/build/synth.tcl`).
+
 ### 2. ARM cross-compile (target = Zynq-7020, Cortex-A9, ARMv7-A + VFPv3 + NEON)
 
 | Item | Version | Path | License | Status |
